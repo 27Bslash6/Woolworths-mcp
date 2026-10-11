@@ -20,10 +20,12 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
     "node-fetch": "3.3.2",
-    "puppeteer": "23.11.1"
+    "puppeteer": "23.11.1",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "22.20.5",
     "typescript": "5.9.3"
-  }
+  },
+  "packageManager": "pnpm@11.9.0"
 }

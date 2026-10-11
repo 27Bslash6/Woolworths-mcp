@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+# pnpm-lock.yaml is the lockfile; keep stray npm/yarn ones out
+package-lock.json
 yarn.lock
 
 # Build output
