@@ -3,7 +3,7 @@
 ## Manual Testing Checklist
 
 ### Prerequisites
-- [ ] Node.js 18+ installed
+- [ ] Node.js 22 or 24 installed
 - [ ] pnpm 11 installed
 - [ ] Project built (`pnpm run build`)
 - [ ] Claude Desktop configured with server

@@ -193,7 +193,7 @@ export PUPPETEER_EXECUTABLE_PATH=/path/to/chrome
 **Solution**:
 1. Make sure you've built the project: `pnpm run build`
 2. Check that `dist/index.js` exists
-3. Check Node.js version (requires 18+): `node --version`
+3. Check Node.js version (requires 22 or 24): `node --version`
 
 ## Development Tips
 

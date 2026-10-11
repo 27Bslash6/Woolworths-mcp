@@ -243,7 +243,7 @@ pnpm run build
 
 ## Requirements
 
-- Node.js 18 or higher
+- Node.js 22 or 24
 - pnpm 11
 - Chromium/Chrome (automatically installed by Puppeteer)
 

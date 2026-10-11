@@ -93,7 +93,7 @@ Woolworths/
 
 ## Technology Stack
 
-- **Runtime**: Node.js 18+
+- **Runtime**: Node.js 22 or 24
 - **Language**: TypeScript 5.5
 - **MCP SDK**: @modelcontextprotocol/sdk ^1.0.4
 - **Browser Automation**: Puppeteer ^23.0.0
@@ -236,7 +236,7 @@ The server handles these error scenarios:
 | "No session cookies" | Capture cookies with `woolworths_get_cookies` |
 | "API request failed: 403" | Cookies expired - recapture them |
 | Puppeteer won't install | Use Node 22 or 24, delete the puppeteer cache folder (`~/.cache/puppeteer/chrome`, or `%USERPROFILE%\.cache\puppeteer\chrome` on Windows) and re-run the install script |
-| Server won't start | Check Node version (needs 18+) |
+| Server won't start | Check Node version (needs 22 or 24) |
 
 ## Credits
 
