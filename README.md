@@ -78,10 +78,10 @@ Opens a browser and navigates to the Woolworths website. This is typically the f
 
 ### 2. woolworths_navigate
 
-Navigate to a specific URL on the Woolworths website.
+Navigate to a specific URL on the Woolworths website. Only `https:` URLs whose host is `woolworths.com.au` or one of its subdomains are accepted; anything else is refused with an error naming the reason. If a redirect lands the page off woolworths.com.au, the tab is cleared to `about:blank` and the tool returns an error naming the final host.
 
 **Parameters:**
-- `url` (string, required): The URL to navigate to
+- `url` (string, required): The https URL on woolworths.com.au to navigate to
 
 ### 3. woolworths_get_cookies
 
@@ -261,6 +261,27 @@ npm run build
 ### Browser won't open
 - Check that Puppeteer installed correctly
 - Try running with headless: true if display issues occur
+
+### `No usable sandbox!` on Linux
+Chromium always runs with its sandbox enabled. Linux distributions that restrict unprivileged user namespaces (Ubuntu 23.10 and later, via AppArmor) only grant them to specific browser binaries by path, such as the installed Google Chrome at `/opt/google/chrome/chrome`. The Chrome for Testing build that Puppeteer downloads is not covered, so it aborts at launch with `FATAL ... No usable sandbox!`.
+
+Install Google Chrome and point Puppeteer at it with `PUPPETEER_EXECUTABLE_PATH` in your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "woolworths": {
+      "command": "node",
+      "args": ["/path/to/Woolworths-mcp/dist/index.js"],
+      "env": {
+        "PUPPETEER_EXECUTABLE_PATH": "/opt/google/chrome/chrome"
+      }
+    }
+  }
+}
+```
+
+Puppeteer only guarantees compatibility with the Chrome version it bundles, so a much newer system Chrome may need a Puppeteer upgrade.
 
 ### API requests fail
 - Ensure you've captured cookies with `woolworths_get_cookies`
