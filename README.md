@@ -18,16 +18,14 @@ A Model Context Protocol (MCP) server for interacting with Woolworths Australia'
 
 ## Installation
 
-1. Install dependencies:
+Run the install script: `./install.sh` (macOS/Linux) or `install.bat` (Windows).
+
+It installs the pinned dependencies from `pnpm-lock.yaml` without running package install scripts, downloads Chrome for Puppeteer, and builds the TypeScript code. To run the same steps by hand (install pnpm with `corepack enable pnpm` on Node 22 or 24):
 
 ```bash
-npm install
-```
-
-2. Build the TypeScript code:
-
-```bash
-npm run build
+pnpm install --frozen-lockfile
+pnpm exec puppeteer browsers install chrome
+pnpm run build
 ```
 
 ## Usage
@@ -37,7 +35,7 @@ npm run build
 The MCP server runs on stdio and is designed to be used with MCP-compatible clients (like Claude Desktop, Cline, or other AI assistants).
 
 ```bash
-npm start
+pnpm start
 ```
 
 ### Configuration for Claude Desktop
@@ -234,19 +232,19 @@ Session cookies are stored in memory for the duration of the server process. If 
 For development with auto-recompilation:
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 ### Building
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 ## Requirements
 
 - Node.js 18 or higher
-- npm or yarn
+- pnpm 11
 - Chromium/Chrome (automatically installed by Puppeteer)
 
 ## Notes

@@ -6,8 +6,12 @@ Follow these steps to get the Woolworths MCP server up and running:
 
 ### 1. Install Dependencies
 
+Run `./install.sh` (macOS/Linux) or `install.bat` (Windows). It runs these steps, which you can also run by hand (install pnpm with `corepack enable pnpm` on Node 22 or 24):
+
 ```bash
-npm install
+pnpm install --frozen-lockfile
+pnpm exec puppeteer browsers install chrome
+pnpm run build
 ```
 
 This will install:
@@ -18,8 +22,10 @@ This will install:
 
 ### 2. Build the Project
 
+The install script already does this. To rebuild by hand:
+
 ```bash
-npm run build
+pnpm run build
 ```
 
 This compiles the TypeScript code in `src/` to JavaScript in `dist/`.
@@ -173,21 +179,19 @@ Assistant: [Returns detailed product information]
 
 **Problem**: Puppeteer fails to install or can't find Chrome.
 
-**Solution**: 
-```bash
-# Reinstall Puppeteer
-npm install puppeteer --force
+**Solution**: Use Node 22 or 24, delete the puppeteer cache folder (`~/.cache/puppeteer/chrome`, or `%USERPROFILE%\.cache\puppeteer\chrome` on Windows) and re-run the install script.
 
-# Or set custom Chrome path
+Or set a custom Chrome path:
+```bash
 export PUPPETEER_EXECUTABLE_PATH=/path/to/chrome
 ```
 
 ### Server Won't Start
 
-**Problem**: Error when running `npm start`.
+**Problem**: Error when running `pnpm start`.
 
 **Solution**:
-1. Make sure you've built the project: `npm run build`
+1. Make sure you've built the project: `pnpm run build`
 2. Check that `dist/index.js` exists
 3. Check Node.js version (requires 18+): `node --version`
 
@@ -198,7 +202,7 @@ export PUPPETEER_EXECUTABLE_PATH=/path/to/chrome
 For development, use watch mode to auto-recompile on changes:
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Keep this running in one terminal, and start the server in another terminal.
@@ -208,7 +212,7 @@ Keep this running in one terminal, and start the server in another terminal.
 After making changes:
 
 1. Stop the MCP server (restart Claude Desktop)
-2. Rebuild: `npm run build`
+2. Rebuild: `pnpm run build`
 3. Start Claude Desktop again
 
 ### Debugging

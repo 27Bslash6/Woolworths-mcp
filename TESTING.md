@@ -4,8 +4,8 @@
 
 ### Prerequisites
 - [ ] Node.js 18+ installed
-- [ ] npm installed
-- [ ] Project built (`npm run build`)
+- [ ] pnpm 11 installed
+- [ ] Project built (`pnpm run build`)
 - [ ] Claude Desktop configured with server
 
 ## Test Suite
@@ -14,13 +14,14 @@
 
 #### Test 1.1: Dependencies Install
 ```bash
-npm install
+pnpm install --frozen-lockfile
+pnpm exec puppeteer browsers install chrome
 ```
 **Expected**: All dependencies install without errors
 
 #### Test 1.2: TypeScript Compilation
 ```bash
-npm run build
+pnpm run build
 ```
 **Expected**: 
 - No TypeScript errors
