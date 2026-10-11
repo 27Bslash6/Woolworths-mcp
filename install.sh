@@ -12,9 +12,12 @@ fi
 echo ""
 
 echo "Step 2: Installing Chrome for Puppeteer..."
-npx puppeteer browsers install chrome
+# A successful install prints "chrome@<buildId> <path>". Some Node versions
+# make the zip extraction exit 0 with no browser, so check for that line.
+npx puppeteer browsers install chrome | grep '^chrome@'
 if [ $? -ne 0 ]; then
-    echo "Failed to install Chrome!"
+    echo "Failed to install Chrome! Use Node 22 or 24, delete the puppeteer"
+    echo "cache folder (~/.cache/puppeteer/chrome) and run this script again."
     exit 1
 fi
 echo ""
