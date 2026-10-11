@@ -14,6 +14,13 @@ echo Step 1: Installing dependencies from pnpm-lock.yaml...
 call pnpm install --frozen-lockfile
 if errorlevel 1 (
     echo Failed to install dependencies!
+    rem Inside the project, older pnpm rejects pnpm-workspace.yaml or switches
+    rem to the packageManager version, so read the version from outside it.
+    echo Installed pnpm version:
+    pushd "%TEMP%"
+    call pnpm --version
+    popd
+    echo This project needs pnpm 11 ^(see packageManager in package.json^). Run "corepack enable pnpm" on Node 22 or 24, or see https://pnpm.io/installation.
     pause
     exit /b 1
 )
