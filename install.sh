@@ -3,15 +3,23 @@
 echo "Installing Woolworths MCP Server..."
 echo ""
 
-echo "Step 1: Installing dependencies..."
-npm install
+echo "Step 1: Installing dependencies from package-lock.json..."
+npm ci --ignore-scripts
 if [ $? -ne 0 ]; then
     echo "Failed to install dependencies!"
     exit 1
 fi
 echo ""
 
-echo "Step 2: Building TypeScript code..."
+echo "Step 2: Installing Chrome for Puppeteer..."
+npx puppeteer browsers install chrome
+if [ $? -ne 0 ]; then
+    echo "Failed to install Chrome!"
+    exit 1
+fi
+echo ""
+
+echo "Step 3: Building TypeScript code..."
 npm run build
 if [ $? -ne 0 ]; then
     echo "Failed to build project!"

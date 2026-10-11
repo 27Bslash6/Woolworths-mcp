@@ -2,8 +2,8 @@
 echo Installing Woolworths MCP Server...
 echo.
 
-echo Step 1: Installing dependencies...
-call npm install
+echo Step 1: Installing dependencies from package-lock.json...
+call npm ci --ignore-scripts
 if errorlevel 1 (
     echo Failed to install dependencies!
     pause
@@ -11,7 +11,16 @@ if errorlevel 1 (
 )
 echo.
 
-echo Step 2: Building TypeScript code...
+echo Step 2: Installing Chrome for Puppeteer...
+call npx puppeteer browsers install chrome
+if errorlevel 1 (
+    echo Failed to install Chrome!
+    pause
+    exit /b 1
+)
+echo.
+
+echo Step 3: Building TypeScript code...
 call npm run build
 if errorlevel 1 (
     echo Failed to build project!

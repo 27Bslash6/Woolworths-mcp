@@ -18,13 +18,12 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4",
-    "puppeteer": "^23.0.0",
-    "node-fetch": "^3.3.2"
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "node-fetch": "3.3.2",
+    "puppeteer": "23.11.1"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "typescript": "^5.5.0"
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3"
   }
 }
-
