@@ -2,8 +2,16 @@
 echo Installing Woolworths MCP Server...
 echo.
 
-echo Step 1: Installing dependencies...
-call npm install
+where pnpm >nul 2>nul
+if errorlevel 1 (
+    echo pnpm is not installed! Run "corepack enable pnpm" ^(Node 22 or 24^),
+    echo or see https://pnpm.io/installation.
+    pause
+    exit /b 1
+)
+
+echo Step 1: Installing dependencies from pnpm-lock.yaml...
+call pnpm install --frozen-lockfile
 if errorlevel 1 (
     echo Failed to install dependencies!
     pause
@@ -11,8 +19,20 @@ if errorlevel 1 (
 )
 echo.
 
-echo Step 2: Building TypeScript code...
-call npm run build
+echo Step 2: Installing Chrome for Puppeteer...
+rem A successful install prints "chrome@<buildId> <path>". Some Node versions
+rem make the zip extraction exit 0 with no browser, so check for that line.
+pnpm exec puppeteer browsers install chrome | findstr /b /c:"chrome@"
+if errorlevel 1 (
+    echo Failed to install Chrome! Use Node 22 or 24, delete the puppeteer
+    echo cache folder ^(%%USERPROFILE%%\.cache\puppeteer\chrome^) and run this script again.
+    pause
+    exit /b 1
+)
+echo.
+
+echo Step 3: Building TypeScript code...
+call pnpm run build
 if errorlevel 1 (
     echo Failed to build project!
     pause

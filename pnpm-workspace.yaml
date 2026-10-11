@@ -1,0 +1,12 @@
+# No dependency lifecycle script runs on install. puppeteer's postinstall only
+# downloads Chrome, which install.sh / install.bat do as an explicit step.
+allowBuilds:
+  puppeteer: false
+
+# Refuse a version whose publish trust (provenance, trusted publisher) is weaker
+# than an earlier release of the same package.
+trustPolicy: no-downgrade
+trustPolicyExclude:
+  # Pinned by @types/node 22 (~6.21.0, types only, dev). Published in 2024
+  # before the 6.x line adopted provenance, so it reads as a downgrade.
+  - undici-types@6.21.0
