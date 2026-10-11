@@ -1,9 +1,4 @@
-// The browser tab holds a live authenticated Woolworths session, and every tool in this server is
-// Woolworths-only, so there is no legitimate off-domain navigation to preserve. Kept out of
-// index.ts so it can be exercised without starting the server.
-
-// Parses `raw` and returns it only if it is an https URL on woolworths.com.au or a subdomain;
-// otherwise throws an error naming the reason.
+// Returns `raw` parsed if it is an https URL on woolworths.com.au or a subdomain; throws otherwise.
 export function assertWoolworthsUrl(raw: string): URL {
   let target: URL;
   try {
@@ -16,11 +11,8 @@ export function assertWoolworthsUrl(raw: string): URL {
       `Navigation blocked: only https is allowed (got "${target.protocol}")`
     );
   }
-  // Compare against the parsed hostname, never the raw string: a substring test would accept
-  // https://woolworths.com.au.evil.com/ and userinfo like https://woolworths.com.au@evil.com/.
-  // A single trailing dot is the legal absolute-root form of the same host; an empty label
-  // anywhere (".woolworths.com.au", "a..b") is not, and must not pass the suffix test.
-  const host = target.hostname.replace(/\.$/, "").toLowerCase();
+  // Parsed hostname, not the raw string; empty labels (".woolworths.com.au") must fail the suffix test.
+  const host = target.hostname.replace(/\.$/, "");
   const labelsValid = host.split(".").every((label) => label.length > 0);
   const allowed =
     labelsValid &&

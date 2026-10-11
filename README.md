@@ -78,14 +78,14 @@ Opens a browser and navigates to the Woolworths website. This is typically the f
 
 ### 2. woolworths_navigate
 
-Navigate to a specific URL on the Woolworths website. Only `https:` URLs whose host is `woolworths.com.au` or one of its subdomains are accepted; anything else is refused with an error naming the reason. If a redirect lands the page off woolworths.com.au, the tab is cleared to `about:blank` and the tool returns an error naming the final host.
+Navigate to a specific URL on the Woolworths website. Only `https:` URLs whose host is `woolworths.com.au` or one of its subdomains are accepted; anything else is refused with an error naming the reason. If a redirect lands the page off woolworths.com.au, the tab is cleared to `about:blank` and the tool returns an error naming the final URL.
 
 **Parameters:**
 - `url` (string, required): The https URL on woolworths.com.au to navigate to
 
 ### 3. woolworths_get_cookies
 
-Retrieves and stores session cookies from the current browser session. Run this after logging in or when you have an active session.
+Retrieves and stores session cookies from the current browser session. Run this after logging in or when you have an active session. It refuses to capture if the tab is no longer on an https woolworths.com.au page.
 
 **Parameters:** None
 

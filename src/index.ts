@@ -293,12 +293,10 @@ async function handleNavigate(args: any): Promise<any> {
     throw new Error("Browser is not open. Use woolworths_open_browser first.");
   }
 
-  // `args.url` is chosen by the model, which may be acting on text it read from a product
-  // listing, a search result or a recipe page.
+  // `args.url` comes from the model, which may be steered by page text it has read.
   const target = assertWoolworthsUrl(String(args.url));
 
-  // Navigate the URL that was actually validated, rather than re-reading the raw input --
-  // Node's URL parser and Chromium's are not guaranteed to agree on an unusual string.
+  // Navigate the validated href, so Node and Chromium never parse different input.
   let navigationError: unknown;
   try {
     await currentPage.goto(target.href, { waitUntil: "networkidle2" });
@@ -306,19 +304,14 @@ async function handleNavigate(args: any): Promise<any> {
     navigationError = error;
   }
 
-  // goto follows redirects, so an open redirect on woolworths.com.au can still land off-domain,
-  // with or without goto throwing. Leave the tab blank rather than on that origin, so a later
-  // woolworths_get_cookies cannot capture its cookies.
+  // Redirects are followed, so the tab can still land off-domain; blank it rather than leave it there.
   const finalUrl = currentPage.url();
   try {
     assertWoolworthsUrl(finalUrl);
-  } catch {
+  } catch (blocked) {
     await currentPage.goto("about:blank");
-    const finalHost = (URL.canParse(finalUrl) && new URL(finalUrl).host) || finalUrl;
-    const cause = navigationError instanceof Error ? ` (${navigationError.message})` : "";
-    throw new Error(
-      `Navigation blocked: ended on "${finalHost}", which is not a woolworths.com.au host${cause}`
-    );
+    const cause = navigationError instanceof Error ? `; ${navigationError.message}` : "";
+    throw new Error(`${(blocked as Error).message} (final URL ${finalUrl}${cause})`);
   }
   if (navigationError) {
     throw navigationError;
@@ -334,6 +327,13 @@ async function handleNavigate(args: any): Promise<any> {
 async function handleGetCookies(args: any): Promise<any> {
   if (!browser || !currentPage) {
     throw new Error("Browser is not open. Use woolworths_open_browser first.");
+  }
+
+  // The tab can drift off-domain after woolworths_navigate returns (a slow redirect, in-page script).
+  try {
+    assertWoolworthsUrl(currentPage.url());
+  } catch (blocked) {
+    throw new Error(`Cookie capture refused: ${(blocked as Error).message.replace(/^Navigation blocked: /, "")}`);
   }
 
   const cookies = await currentPage.cookies();
