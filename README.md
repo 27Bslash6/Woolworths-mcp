@@ -263,7 +263,7 @@ npm run build
 - Try running with headless: true if display issues occur
 
 ### `No usable sandbox!` on Linux
-Chromium always runs with its sandbox enabled. Linux distributions that restrict unprivileged user namespaces (Ubuntu 23.10 and later, via AppArmor) only grant them to specific browser binaries by path, such as the installed Google Chrome at `/opt/google/chrome/chrome`. The Chrome for Testing build that Puppeteer downloads is not covered, so it aborts at launch with `FATAL ... No usable sandbox!`.
+Chromium always runs with its sandbox enabled; Puppeteer's `PUPPETEER_DANGEROUS_NO_SANDBOX` is ignored, and a launch that ends up with the sandbox disabled is refused. Linux distributions that restrict unprivileged user namespaces (Ubuntu 23.10 and later, via AppArmor) only grant them to specific browser binaries by path, such as the installed Google Chrome at `/opt/google/chrome/chrome`. The Chrome for Testing build that Puppeteer downloads is not covered, so it aborts at launch with `FATAL ... No usable sandbox!`.
 
 Install Google Chrome and point Puppeteer at it with `PUPPETEER_EXECUTABLE_PATH` in your MCP client config:
 

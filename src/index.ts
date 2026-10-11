@@ -260,13 +260,23 @@ async function handleOpenBrowser(args: any): Promise<any> {
 
   const headless = args.headless ?? false;
 
-  browser = await puppeteer.launch({
+  // The sandbox is always on: strip Puppeteer's own opt-out (PUPPETEER_DANGEROUS_NO_SANDBOX adds
+  // --no-sandbox to its defaults), then refuse any launch that still disabled it.
+  const sandboxFlags = ["--no-sandbox", "--disable-setuid-sandbox"];
+  const launched = await puppeteer.launch({
     headless,
     args: [
       "--disable-blink-features=AutomationControlled",
     ],
+    ignoreDefaultArgs: sandboxFlags,
     defaultViewport: { width: 1280, height: 800 },
   });
+  const spawnArgs = launched.process()?.spawnargs ?? [];
+  if (spawnArgs.some((arg) => sandboxFlags.includes(arg))) {
+    await launched.close();
+    throw new Error("Refusing to run Chromium with its sandbox disabled");
+  }
+  browser = launched;
 
   currentPage = await browser.newPage();
 
@@ -309,9 +319,12 @@ async function handleNavigate(args: any): Promise<any> {
   try {
     assertWoolworthsUrl(finalUrl);
   } catch (blocked) {
-    await currentPage.goto("about:blank");
     const cause = navigationError instanceof Error ? `; ${navigationError.message}` : "";
-    throw new Error(`${(blocked as Error).message} (final URL ${finalUrl}${cause})`);
+    const blanking = await currentPage.goto("about:blank").then(
+      () => "",
+      (error) => `; blanking failed: ${error instanceof Error ? error.message : error}`
+    );
+    throw new Error(`${(blocked as Error).message} (final URL ${finalUrl}${cause}${blanking})`);
   }
   if (navigationError) {
     throw navigationError;
@@ -333,7 +346,7 @@ async function handleGetCookies(args: any): Promise<any> {
   try {
     assertWoolworthsUrl(currentPage.url());
   } catch (blocked) {
-    throw new Error(`Cookie capture refused: ${(blocked as Error).message.replace(/^Navigation blocked: /, "")}`);
+    throw new Error(`Cookie capture refused (${(blocked as Error).message})`);
   }
 
   const cookies = await currentPage.cookies();
