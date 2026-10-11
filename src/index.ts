@@ -264,6 +264,7 @@ async function handleOpenBrowser(args: any): Promise<any> {
   // --no-sandbox to its defaults), then refuse any launch that still disabled it.
   const sandboxFlags = ["--no-sandbox", "--disable-setuid-sandbox"];
   const launched = await puppeteer.launch({
+    browser: "chrome", // PUPPETEER_BROWSER / defaultBrowser could switch to Firefox, which these checks cannot see.
     headless,
     args: [
       "--disable-blink-features=AutomationControlled",
