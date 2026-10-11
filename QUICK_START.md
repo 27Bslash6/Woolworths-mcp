@@ -113,7 +113,7 @@ Now you can:
 
 **"API request failed: 403"** → Cookies expired, recapture them
 
-**Server won't start** → Check you've run `npm run build`
+**Server won't start** → Check you've run `pnpm run build`
 
 ## Support
 

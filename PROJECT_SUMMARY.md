@@ -93,7 +93,7 @@ Woolworths/
 
 ## Technology Stack
 
-- **Runtime**: Node.js 18+
+- **Runtime**: Node.js 22 or 24
 - **Language**: TypeScript 5.5
 - **MCP SDK**: @modelcontextprotocol/sdk ^1.0.4
 - **Browser Automation**: Puppeteer ^23.0.0
@@ -122,10 +122,9 @@ The server interacts with these Woolworths internal APIs:
 ## Workflow
 
 ### Initial Setup
-1. User installs dependencies: `npm install`
-2. User builds project: `npm run build`
-3. User configures MCP client (e.g., Claude Desktop)
-4. User restarts MCP client
+1. User runs `./install.sh` (macOS/Linux) or `install.bat` (Windows), which installs dependencies, downloads Chrome and builds the project
+2. User configures MCP client (e.g., Claude Desktop)
+3. User restarts MCP client
 
 ### Runtime Flow
 1. **Browser Phase**:
@@ -170,8 +169,9 @@ chmod +x install.sh
 
 ### Method 3: Manual
 ```bash
-npm install
-npm run build
+pnpm install --frozen-lockfile
+pnpm exec puppeteer browsers install chrome
+pnpm run build
 # Then configure Claude Desktop manually
 ```
 
@@ -235,8 +235,8 @@ The server handles these error scenarios:
 | "Browser is not open" | Run `woolworths_open_browser` |
 | "No session cookies" | Capture cookies with `woolworths_get_cookies` |
 | "API request failed: 403" | Cookies expired - recapture them |
-| Puppeteer won't install | Run `npm install puppeteer --force` |
-| Server won't start | Check Node version (needs 18+) |
+| Puppeteer won't install | Use Node 22 or 24, delete the puppeteer cache folder (`~/.cache/puppeteer/chrome`, or `%USERPROFILE%\.cache\puppeteer\chrome` on Windows) and re-run the install script |
+| Server won't start | Check Node version (needs 22 or 24) |
 
 ## Credits
 
