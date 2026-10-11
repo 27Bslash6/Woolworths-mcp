@@ -34,6 +34,7 @@ jobs:
       - run: pnpm run build
 
       - name: MCP server answers initialize and tools/list
+        shell: bash # adds -o pipefail, so a crash or hang fails the step
         run: |
           printf '%s\n' \
             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
