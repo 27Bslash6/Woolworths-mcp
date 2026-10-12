@@ -1,14 +1,11 @@
 #!/usr/bin/env node
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  Tool,
-} from "@modelcontextprotocol/sdk/types.js";
+import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import puppeteer, { Browser, Page } from "puppeteer";
 import fetch from "node-fetch";
+import { z } from "zod";
 import { assertWoolworthsUrl } from "./navigation.js";
 
 // Cookie storage
@@ -16,192 +13,11 @@ let sessionCookies: any[] = [];
 let browser: Browser | null = null;
 let currentPage: Page | null = null;
 
-// Tool definitions
-const TOOLS: Tool[] = [
-  {
-    name: "woolworths_open_browser",
-    description:
-      "Opens a browser and navigates to Woolworths website. This is the first step to establish a session.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        headless: {
-          type: "boolean",
-          description: "Whether to run browser in headless mode (default: false for easier login)",
-          default: false,
-        },
-      },
-    },
-  },
-  {
-    name: "woolworths_navigate",
-    description:
-      "Navigate to a specific URL on the Woolworths website. Only https URLs on woolworths.com.au or its subdomains are allowed.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        url: {
-          type: "string",
-          description: "The https URL on woolworths.com.au to navigate to",
-        },
-      },
-      required: ["url"],
-    },
-  },
-  {
-    name: "woolworths_get_cookies",
-    description:
-      "Retrieves session cookies from the current browser session. Run this after logging in or establishing a session.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-    },
-  },
-  {
-    name: "woolworths_close_browser",
-    description: "Closes the browser instance",
-    inputSchema: {
-      type: "object",
-      properties: {},
-    },
-  },
-  {
-    name: "woolworths_search_products",
-    description:
-      "Search for products on Woolworths. Requires session cookies to be obtained first.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        searchTerm: {
-          type: "string",
-          description: "The product search term",
-        },
-        pageNumber: {
-          type: "number",
-          description: "Page number for pagination (default: 1)",
-          default: 1,
-        },
-        pageSize: {
-          type: "number",
-          description: "Number of results to return (default: 36)",
-          default: 36,
-        },
-        sortType: {
-          type: "string",
-          description: "Sort order: TraderRelevance, PriceAsc, PriceDesc, Name (default: TraderRelevance)",
-          enum: ["TraderRelevance", "PriceAsc", "PriceDesc", "Name"],
-          default: "TraderRelevance",
-        },
-        isSpecial: {
-          type: "boolean",
-          description: "Filter for special offers only (default: false)",
-          default: false,
-        },
-      },
-      required: ["searchTerm"],
-    },
-  },
-  {
-    name: "woolworths_get_product_details",
-    description:
-      "Get detailed information about a specific product by its stockcode",
-    inputSchema: {
-      type: "object",
-      properties: {
-        stockcode: {
-          type: "string",
-          description: "The product stockcode/ID",
-        },
-      },
-      required: ["stockcode"],
-    },
-  },
-  {
-    name: "woolworths_get_specials",
-    description: "Get current specials and deals from Woolworths",
-    inputSchema: {
-      type: "object",
-      properties: {
-        category: {
-          type: "string",
-          description: "Optional category filter (e.g., 'fruit-veg', 'meat-seafood')",
-        },
-        pageSize: {
-          type: "number",
-          description: "Number of results to return (default: 20)",
-          default: 20,
-        },
-      },
-    },
-  },
-  {
-    name: "woolworths_get_categories",
-    description: "Get the list of available product categories",
-    inputSchema: {
-      type: "object",
-      properties: {},
-    },
-  },
-  {
-    name: "woolworths_add_to_cart",
-    description: "Add a product to the shopping cart/trolley",
-    inputSchema: {
-      type: "object",
-      properties: {
-        stockcode: {
-          type: "number",
-          description: "The product stockcode/ID to add",
-        },
-        quantity: {
-          type: "number",
-          description: "Quantity to add (default: 1)",
-          default: 1,
-        },
-      },
-      required: ["stockcode"],
-    },
-  },
-  {
-    name: "woolworths_get_cart",
-    description: "Get the contents of the shopping cart/trolley",
-    inputSchema: {
-      type: "object",
-      properties: {},
-    },
-  },
-  {
-    name: "woolworths_remove_from_cart",
-    description: "Remove a product from the shopping cart/trolley",
-    inputSchema: {
-      type: "object",
-      properties: {
-        stockcode: {
-          type: "number",
-          description: "The product stockcode/ID to remove",
-        },
-      },
-      required: ["stockcode"],
-    },
-  },
-  {
-    name: "woolworths_update_cart_quantity",
-    description: "Update the quantity of a product in the shopping cart/trolley",
-    inputSchema: {
-      type: "object",
-      properties: {
-        stockcode: {
-          type: "number",
-          description: "The product stockcode/ID",
-        },
-        quantity: {
-          type: "number",
-          description: "New quantity",
-        },
-      },
-      required: ["stockcode", "quantity"],
-    },
-  },
-];
+// Argument schemas. McpServer validates every call against these before a handler runs.
+const stockcode = z.number().int().positive();
+const quantity = z.number().int().min(0);
+// 36 is the page size the site's own search uses (woolworths-api-docs.md).
+const pageSize = z.number().int().min(1).max(36);
 
 // Helper function to get cookie header string
 function getCookieHeader(): string {
@@ -250,15 +66,13 @@ async function makeWoolworthsRequest(
 }
 
 // Tool handlers
-async function handleOpenBrowser(args: any): Promise<any> {
+async function handleOpenBrowser({ headless }: { headless: boolean }): Promise<any> {
   if (browser) {
     return {
       success: false,
       message: "Browser is already open. Close it first with woolworths_close_browser.",
     };
   }
-
-  const headless = args.headless ?? false;
 
   // The sandbox is always on: strip Puppeteer's own opt-out (PUPPETEER_DANGEROUS_NO_SANDBOX adds
   // --no-sandbox to its defaults), then refuse any launch that still disabled it.
@@ -299,13 +113,13 @@ async function handleOpenBrowser(args: any): Promise<any> {
   };
 }
 
-async function handleNavigate(args: any): Promise<any> {
+async function handleNavigate({ url }: { url: string }): Promise<any> {
   if (!browser || !currentPage) {
     throw new Error("Browser is not open. Use woolworths_open_browser first.");
   }
 
-  // `args.url` comes from the model, which may be steered by page text it has read.
-  const target = assertWoolworthsUrl(String(args.url));
+  // `url` comes from the model, which may be steered by page text it has read.
+  const target = assertWoolworthsUrl(url);
 
   // Navigate the validated href, so Node and Chromium never parse different input.
   let navigationError: unknown;
@@ -338,7 +152,7 @@ async function handleNavigate(args: any): Promise<any> {
   };
 }
 
-async function handleGetCookies(args: any): Promise<any> {
+async function handleGetCookies(): Promise<any> {
   if (!browser || !currentPage) {
     throw new Error("Browser is not open. Use woolworths_open_browser first.");
   }
@@ -366,7 +180,7 @@ async function handleGetCookies(args: any): Promise<any> {
   };
 }
 
-async function handleCloseBrowser(args: any): Promise<any> {
+async function handleCloseBrowser(): Promise<any> {
   if (!browser) {
     return {
       success: false,
@@ -384,13 +198,19 @@ async function handleCloseBrowser(args: any): Promise<any> {
   };
 }
 
-async function handleSearchProducts(args: any): Promise<any> {
-  const searchTerm = args.searchTerm;
-  const pageNumber = args.pageNumber ?? 1;
-  const pageSize = args.pageSize ?? 36;
-  const sortType = args.sortType ?? "TraderRelevance";
-  const isSpecial = args.isSpecial ?? false;
-
+async function handleSearchProducts({
+  searchTerm,
+  pageNumber,
+  pageSize,
+  sortType,
+  isSpecial,
+}: {
+  searchTerm: string;
+  pageNumber: number;
+  pageSize: number;
+  sortType: string;
+  isSpecial: boolean;
+}): Promise<any> {
   // Woolworths search API endpoint (POST method)
   const url = `https://www.woolworths.com.au/apis/ui/Search/products`;
 
@@ -436,10 +256,8 @@ async function handleSearchProducts(args: any): Promise<any> {
   }
 }
 
-async function handleGetProductDetails(args: any): Promise<any> {
-  const stockcode = args.stockcode;
-
-  const url = `https://www.woolworths.com.au/apis/ui/product/detail/${stockcode}`;
+async function handleGetProductDetails({ stockcode }: { stockcode: number }): Promise<any> {
+  const url = `https://www.woolworths.com.au/apis/ui/product/detail/${encodeURIComponent(stockcode)}`;
 
   try {
     const data = await makeWoolworthsRequest(url);
@@ -455,10 +273,13 @@ async function handleGetProductDetails(args: any): Promise<any> {
   }
 }
 
-async function handleGetSpecials(args: any): Promise<any> {
-  const category = args.category || "";
-  const pageSize = args.pageSize ?? 20;
-
+async function handleGetSpecials({
+  category = "",
+  pageSize,
+}: {
+  category?: string;
+  pageSize: number;
+}): Promise<any> {
   let url = `https://www.woolworths.com.au/apis/ui/browse/category`;
 
   if (category) {
@@ -483,7 +304,7 @@ async function handleGetSpecials(args: any): Promise<any> {
   }
 }
 
-async function handleGetCategories(args: any): Promise<any> {
+async function handleGetCategories(): Promise<any> {
   const url = `https://www.woolworths.com.au/apis/ui/PiesCategoriesWithSpecials`;
 
   try {
@@ -500,10 +321,13 @@ async function handleGetCategories(args: any): Promise<any> {
   }
 }
 
-async function handleAddToCart(args: any): Promise<any> {
-  const stockcode = args.stockcode;
-  const quantity = args.quantity ?? 1;
-
+async function handleAddToCart({
+  stockcode,
+  quantity,
+}: {
+  stockcode: number;
+  quantity: number;
+}): Promise<any> {
   const url = `https://www.woolworths.com.au/api/v3/ui/trolley/update`;
 
   try {
@@ -540,7 +364,7 @@ async function handleAddToCart(args: any): Promise<any> {
   }
 }
 
-async function handleGetCart(args: any): Promise<any> {
+async function handleGetCart(): Promise<any> {
   const url = `https://www.woolworths.com.au/apis/ui/Trolley`;
 
   try {
@@ -557,9 +381,7 @@ async function handleGetCart(args: any): Promise<any> {
   }
 }
 
-async function handleRemoveFromCart(args: any): Promise<any> {
-  const stockcode = args.stockcode;
-
+async function handleRemoveFromCart({ stockcode }: { stockcode: number }): Promise<any> {
   const url = `https://www.woolworths.com.au/api/v3/ui/trolley/update`;
 
   try {
@@ -596,10 +418,13 @@ async function handleRemoveFromCart(args: any): Promise<any> {
   }
 }
 
-async function handleUpdateCartQuantity(args: any): Promise<any> {
-  const stockcode = args.stockcode;
-  const quantity = args.quantity;
-
+async function handleUpdateCartQuantity({
+  stockcode,
+  quantity,
+}: {
+  stockcode: number;
+  quantity: number;
+}): Promise<any> {
   const url = `https://www.woolworths.com.au/api/v3/ui/trolley/update`;
 
   try {
@@ -636,112 +461,181 @@ async function handleUpdateCartQuantity(args: any): Promise<any> {
   }
 }
 
+// Serialises a handler's result; a thrown error keeps the { success: false, error } payload.
+async function toolResult(run: () => Promise<unknown>): Promise<CallToolResult> {
+  try {
+    return { content: [{ type: "text", text: JSON.stringify(await run(), null, 2) }] };
+  } catch (error: any) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ success: false, error: error.message }, null, 2),
+        },
+      ],
+      isError: true,
+    };
+  }
+}
+
 // Main server setup
 async function main() {
-  const server = new Server(
+  const server = new McpServer({
+    name: "woolworths-mcp-server",
+    version: "1.0.0",
+  });
+
+  server.registerTool(
+    "woolworths_open_browser",
     {
-      name: "woolworths-mcp-server",
-      version: "1.0.0",
-    },
-    {
-      capabilities: {
-        tools: {},
+      description:
+        "Opens a browser and navigates to Woolworths website. This is the first step to establish a session.",
+      inputSchema: {
+        headless: z
+          .boolean()
+          .default(false)
+          .describe("Whether to run browser in headless mode (default: false for easier login)"),
       },
-    }
+    },
+    (args) => toolResult(() => handleOpenBrowser(args))
   );
 
-  // List available tools
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOLS,
-  }));
+  server.registerTool(
+    "woolworths_navigate",
+    {
+      description:
+        "Navigate to a specific URL on the Woolworths website. Only https URLs on woolworths.com.au or its subdomains are allowed.",
+      inputSchema: {
+        url: z.string().describe("The https URL on woolworths.com.au to navigate to"),
+      },
+    },
+    (args) => toolResult(() => handleNavigate(args))
+  );
 
-  // Handle tool calls
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
+  server.registerTool(
+    "woolworths_get_cookies",
+    {
+      description:
+        "Retrieves session cookies from the current browser session. Run this after logging in or establishing a session.",
+      // Not read-only: the captured cookies replace the session every later call sends.
+      annotations: { readOnlyHint: false, destructiveHint: true },
+    },
+    () => toolResult(handleGetCookies)
+  );
 
-    try {
-      let result;
+  server.registerTool(
+    "woolworths_close_browser",
+    { description: "Closes the browser instance" },
+    () => toolResult(handleCloseBrowser)
+  );
 
-      switch (name) {
-        case "woolworths_open_browser":
-          result = await handleOpenBrowser(args || {});
-          break;
+  server.registerTool(
+    "woolworths_search_products",
+    {
+      description:
+        "Search for products on Woolworths. Requires session cookies to be obtained first.",
+      inputSchema: {
+        searchTerm: z.string().min(1).describe("The product search term"),
+        pageNumber: z
+          .number()
+          .int()
+          .min(1)
+          .default(1)
+          .describe("Page number for pagination (default: 1)"),
+        pageSize: pageSize.default(36).describe("Number of results to return (default: 36)"),
+        sortType: z
+          .enum(["TraderRelevance", "PriceAsc", "PriceDesc", "Name"])
+          .default("TraderRelevance")
+          .describe("Sort order: TraderRelevance, PriceAsc, PriceDesc, Name (default: TraderRelevance)"),
+        isSpecial: z
+          .boolean()
+          .default(false)
+          .describe("Filter for special offers only (default: false)"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    (args) => toolResult(() => handleSearchProducts(args))
+  );
 
-        case "woolworths_navigate":
-          result = await handleNavigate(args || {});
-          break;
+  server.registerTool(
+    "woolworths_get_product_details",
+    {
+      description: "Get detailed information about a specific product by its stockcode",
+      inputSchema: { stockcode: stockcode.describe("The product stockcode/ID") },
+      annotations: { readOnlyHint: true },
+    },
+    (args) => toolResult(() => handleGetProductDetails(args))
+  );
 
-        case "woolworths_get_cookies":
-          result = await handleGetCookies(args || {});
-          break;
+  server.registerTool(
+    "woolworths_get_specials",
+    {
+      description: "Get current specials and deals from Woolworths",
+      inputSchema: {
+        category: z
+          .string()
+          .optional()
+          .describe("Optional category filter (e.g., 'fruit-veg', 'meat-seafood')"),
+        pageSize: pageSize.default(20).describe("Number of results to return (default: 20)"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    (args) => toolResult(() => handleGetSpecials(args))
+  );
 
-        case "woolworths_close_browser":
-          result = await handleCloseBrowser(args || {});
-          break;
+  server.registerTool(
+    "woolworths_get_categories",
+    {
+      description: "Get the list of available product categories",
+      annotations: { readOnlyHint: true },
+    },
+    () => toolResult(handleGetCategories)
+  );
 
-        case "woolworths_search_products":
-          result = await handleSearchProducts(args || {});
-          break;
+  server.registerTool(
+    "woolworths_add_to_cart",
+    {
+      description: "Add a product to the shopping cart/trolley",
+      inputSchema: {
+        stockcode: stockcode.describe("The product stockcode/ID to add"),
+        quantity: quantity.default(1).describe("Quantity to add (default: 1)"),
+      },
+      annotations: { destructiveHint: true },
+    },
+    (args) => toolResult(() => handleAddToCart(args))
+  );
 
-        case "woolworths_get_product_details":
-          result = await handleGetProductDetails(args || {});
-          break;
+  server.registerTool(
+    "woolworths_get_cart",
+    {
+      description: "Get the contents of the shopping cart/trolley",
+      annotations: { readOnlyHint: true },
+    },
+    () => toolResult(handleGetCart)
+  );
 
-        case "woolworths_get_specials":
-          result = await handleGetSpecials(args || {});
-          break;
+  server.registerTool(
+    "woolworths_remove_from_cart",
+    {
+      description: "Remove a product from the shopping cart/trolley",
+      inputSchema: { stockcode: stockcode.describe("The product stockcode/ID to remove") },
+      annotations: { destructiveHint: true },
+    },
+    (args) => toolResult(() => handleRemoveFromCart(args))
+  );
 
-        case "woolworths_get_categories":
-          result = await handleGetCategories(args || {});
-          break;
-
-        case "woolworths_add_to_cart":
-          result = await handleAddToCart(args || {});
-          break;
-
-        case "woolworths_get_cart":
-          result = await handleGetCart(args || {});
-          break;
-
-        case "woolworths_remove_from_cart":
-          result = await handleRemoveFromCart(args || {});
-          break;
-
-        case "woolworths_update_cart_quantity":
-          result = await handleUpdateCartQuantity(args || {});
-          break;
-
-        default:
-          throw new Error(`Unknown tool: ${name}`);
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
-    } catch (error: any) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                success: false,
-                error: error.message,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-        isError: true,
-      };
-    }
-  });
+  server.registerTool(
+    "woolworths_update_cart_quantity",
+    {
+      description: "Update the quantity of a product in the shopping cart/trolley",
+      inputSchema: {
+        stockcode: stockcode.describe("The product stockcode/ID"),
+        quantity: quantity.describe("New quantity"),
+      },
+      annotations: { destructiveHint: true },
+    },
+    (args) => toolResult(() => handleUpdateCartQuantity(args))
+  );
 
   // Cleanup on exit
   process.on("SIGINT", async () => {

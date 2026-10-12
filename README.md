@@ -99,7 +99,8 @@ Search for products on Woolworths.
 
 **Parameters:**
 - `searchTerm` (string, required): The product search term
-- `pageSize` (number, optional): Number of results to return (default: 20)
+- `pageNumber` (integer, optional, 1 or more): Page number (default: 1)
+- `pageSize` (integer, optional, 1 to 36): Number of results to return (default: 36)
 
 **Example:**
 ```json
@@ -114,7 +115,7 @@ Search for products on Woolworths.
 Get detailed information about a specific product by its stockcode.
 
 **Parameters:**
-- `stockcode` (string, required): The product stockcode/ID
+- `stockcode` (positive integer, required): The product stockcode/ID
 
 ### 7. woolworths_get_specials
 
@@ -122,7 +123,7 @@ Get current specials and deals from Woolworths.
 
 **Parameters:**
 - `category` (string, optional): Category filter (e.g., 'fruit-veg', 'meat-seafood')
-- `pageSize` (number, optional): Number of results to return (default: 20)
+- `pageSize` (integer, optional, 1 to 36): Number of results to return (default: 20)
 
 ### 8. woolworths_get_categories
 
@@ -135,8 +136,8 @@ Get the list of available product categories.
 Add a product to the shopping cart/trolley.
 
 **Parameters:**
-- `stockcode` (number, required): The product stockcode/ID
-- `quantity` (number, optional): Quantity to add (default: 1)
+- `stockcode` (positive integer, required): The product stockcode/ID
+- `quantity` (integer, optional, 0 or more): Quantity to add (default: 1)
 
 **Example:**
 ```json
@@ -157,15 +158,15 @@ Get the current contents of the shopping cart/trolley.
 Remove a product from the shopping cart/trolley.
 
 **Parameters:**
-- `stockcode` (number, required): The product stockcode/ID to remove
+- `stockcode` (positive integer, required): The product stockcode/ID to remove
 
 ### 12. woolworths_update_cart_quantity
 
 Update the quantity of a product in the shopping cart/trolley.
 
 **Parameters:**
-- `stockcode` (number, required): The product stockcode/ID
-- `quantity` (number, required): New quantity
+- `stockcode` (positive integer, required): The product stockcode/ID
+- `quantity` (integer, required, 0 or more): New quantity
 
 ## Typical Workflow
 
