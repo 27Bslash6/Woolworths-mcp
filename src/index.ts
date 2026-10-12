@@ -9,6 +9,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import puppeteer, { Browser, Page } from "puppeteer";
 import fetch from "node-fetch";
+import { assertWoolworthsUrl } from "./navigation.js";
 
 // Cookie storage
 let sessionCookies: any[] = [];
@@ -34,13 +35,14 @@ const TOOLS: Tool[] = [
   },
   {
     name: "woolworths_navigate",
-    description: "Navigate to a specific URL on the Woolworths website",
+    description:
+      "Navigate to a specific URL on the Woolworths website. Only https URLs on woolworths.com.au or its subdomains are allowed.",
     inputSchema: {
       type: "object",
       properties: {
         url: {
           type: "string",
-          description: "The URL to navigate to",
+          description: "The https URL on woolworths.com.au to navigate to",
         },
       },
       required: ["url"],
@@ -258,15 +260,24 @@ async function handleOpenBrowser(args: any): Promise<any> {
 
   const headless = args.headless ?? false;
 
-  browser = await puppeteer.launch({
+  // The sandbox is always on: strip Puppeteer's own opt-out (PUPPETEER_DANGEROUS_NO_SANDBOX adds
+  // --no-sandbox to its defaults), then refuse any launch that still disabled it.
+  const sandboxFlags = ["--no-sandbox", "--disable-setuid-sandbox"];
+  const launched = await puppeteer.launch({
+    browser: "chrome", // PUPPETEER_BROWSER / defaultBrowser could switch to Firefox, which these checks cannot see.
     headless,
     args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
       "--disable-blink-features=AutomationControlled",
     ],
+    ignoreDefaultArgs: sandboxFlags,
     defaultViewport: { width: 1280, height: 800 },
   });
+  const spawnArgs = launched.process()?.spawnargs ?? [];
+  if (spawnArgs.some((arg) => sandboxFlags.includes(arg))) {
+    await launched.close();
+    throw new Error("Refusing to run Chromium with its sandbox disabled");
+  }
+  browser = launched;
 
   currentPage = await browser.newPage();
 
@@ -293,11 +304,36 @@ async function handleNavigate(args: any): Promise<any> {
     throw new Error("Browser is not open. Use woolworths_open_browser first.");
   }
 
-  await currentPage.goto(args.url, { waitUntil: "networkidle2" });
+  // `args.url` comes from the model, which may be steered by page text it has read.
+  const target = assertWoolworthsUrl(String(args.url));
+
+  // Navigate the validated href, so Node and Chromium never parse different input.
+  let navigationError: unknown;
+  try {
+    await currentPage.goto(target.href, { waitUntil: "networkidle2" });
+  } catch (error) {
+    navigationError = error;
+  }
+
+  // Redirects are followed, so the tab can still land off-domain; blank it rather than leave it there.
+  const finalUrl = currentPage.url();
+  try {
+    assertWoolworthsUrl(finalUrl);
+  } catch (blocked) {
+    const cause = navigationError instanceof Error ? `; ${navigationError.message}` : "";
+    const blanking = await currentPage.goto("about:blank").then(
+      () => "",
+      (error) => `; blanking failed: ${error instanceof Error ? error.message : error}`
+    );
+    throw new Error(`${(blocked as Error).message} (final URL ${finalUrl}${cause}${blanking})`);
+  }
+  if (navigationError) {
+    throw navigationError;
+  }
 
   return {
     success: true,
-    url: currentPage.url(),
+    url: finalUrl,
     title: await currentPage.title(),
   };
 }
@@ -305,6 +341,13 @@ async function handleNavigate(args: any): Promise<any> {
 async function handleGetCookies(args: any): Promise<any> {
   if (!browser || !currentPage) {
     throw new Error("Browser is not open. Use woolworths_open_browser first.");
+  }
+
+  // The tab can drift off-domain after woolworths_navigate returns (a slow redirect, in-page script).
+  try {
+    assertWoolworthsUrl(currentPage.url());
+  } catch (blocked) {
+    throw new Error(`Cookie capture refused (${(blocked as Error).message})`);
   }
 
   const cookies = await currentPage.cookies();
