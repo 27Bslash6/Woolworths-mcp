@@ -25,14 +25,11 @@
   - PriceDesc (price high to low)
   - Name (alphabetical)
 - ✅ Filter by specials
-- ✅ Detailed product information in results:
-  - Stockcode, Name, Brand
-  - Price, Was Price, Savings
-  - Availability status
-  - Product images (small, medium, large)
-  - Unit size and packaging
-  - Ratings and reviews count
-  - Categories
+- ✅ Compact product information in results, limited to these fields:
+  - `Stockcode`, `DisplayName`, `Brand`, `PackageSize`
+  - `Price`, `WasPrice`, `IsOnSpecial`, `CupString`, `Unit`
+  - `IsAvailable`
+- ✅ Full product record via `woolworths_get_product_details` (pass the `Stockcode`)
 
 ### 4. Product Details
 - ✅ Get comprehensive product information by stockcode

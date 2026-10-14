@@ -91,8 +91,7 @@ pnpm run build
 **Expected**:
 - Returns list of milk products
 - Total results count > 0
-- Products have: Stockcode, Name, Price, Brand
-- Image URLs present
+- Products have only: Stockcode, DisplayName, Brand, PackageSize, Price, WasPrice, IsOnSpecial, CupString, Unit, IsAvailable
 - Response includes pagination info
 
 #### Test 3.2: Search with Pagination
