@@ -123,17 +123,31 @@ Get detailed information about a specific product by its stockcode.
 **Parameters:**
 - `stockcode` (positive integer, required): The product stockcode/ID
 
+**Returns:** `product`, the full Woolworths product record (`Product`, `NutritionalInformation`, `AdditionalAttributes` and the rest), about 30 KB.
+
 ### 7. woolworths_get_specials
 
-Get current specials and deals from Woolworths.
+Get a page of current specials, the listing the site's own specials pages show. Pass a `category`, `halfPrice: true`, or both: the site has no store-wide listing of every special.
 
 **Parameters:**
-- `category` (string, optional): Category filter (e.g., 'fruit-veg', 'meat-seafood')
-- `pageSize` (integer, optional, 1 to 36): Number of results to return (default: 20)
+- `category` (string, optional): NodeId of a top-level category from `woolworths_get_categories`, e.g. `1-E5BEE36E` (Fruit & Veg) or `1_39FD49C` (Pantry). Returns that category's Specials & Offers listing, which can include multibuy offers not marked `IsOnSpecial`. A subcategory NodeId is not a specials listing; use its top-level parent.
+- `halfPrice` (boolean, optional): Only half-price specials (default: false). Without a `category`, returns half-price specials across the store.
+- `pageNumber` (integer, optional, 1 or more): Page number (default: 1)
+- `pageSize` (integer, optional, 1 to 36): Number of results to return (default: 36)
+
+**Returns:** `totalResults`, `pageNumber`, `pageSize` and `products`, with the same fields per product as `woolworths_search_products`.
+
+**Example:**
+```json
+{
+  "category": "1_39FD49C",
+  "halfPrice": true
+}
+```
 
 ### 8. woolworths_get_categories
 
-Get the list of available product categories.
+Get the product categories: each top-level category with its subcategories, as `NodeId`, `Description` and `UrlFriendlyName`. The specials listings in the site's tree are left out; pass a top-level `NodeId` to `woolworths_get_specials` instead.
 
 **Parameters:** None
 
@@ -199,8 +213,8 @@ Update the quantity of a product in the shopping cart/trolley.
 5. User: "Search for bananas"
    → Calls: woolworths_search_products with searchTerm="bananas"
    
-6. User: "What are the current specials?"
-   → Calls: woolworths_get_specials
+6. User: "What's half price this week?"
+   → Calls: woolworths_get_specials with halfPrice=true
 
 7. User: "Add product 123456 to my cart"
    → Calls: woolworths_add_to_cart with stockcode=123456
@@ -223,9 +237,9 @@ The server uses Puppeteer to:
 
 Once cookies are captured, the server makes authenticated requests to Woolworths' internal APIs:
 - Search API: `/apis/ui/Search/products` (POST)
-- Product Detail API: `/apis/ui/product/detail/{stockcode}`
-- Browse/Category API: `/apis/ui/browse/category`
-- Categories API: `/apis/ui/PiesCategoriesWithSpecials`
+- Product Detail API: `/apis/ui/product/detail/{stockcode}` (GET)
+- Specials Browse API: `/apis/ui/browse/category` (POST; `categoryId` selects the specials listing)
+- Categories API: `/apis/ui/PiesCategoriesWithSpecials` (GET)
 - Shopping Cart API: `/apis/ui/Trolley` (GET, cart contents) and `/api/v3/ui/trolley/update` (POST; add, update, and remove with quantity 0)
 
 ### Session Management
@@ -255,7 +269,7 @@ pnpm run lint   # Oxlint, type-aware
 pnpm test       # builds, then runs the offline tests in test/ with node:test
 ```
 
-The tests stub `fetch` and `puppeteer.launch`, so they never reach the network or start a browser. `test/fixtures/search-milk.json` is a recorded search response, cut to 8 results, with ad ids and tracking tokens removed.
+The tests stub `fetch` and `puppeteer.launch`, so they never reach the network or start a browser. `test/fixtures/` holds one recorded response per endpoint the read tools call (search, specials, product detail, categories), cut to a few results, with ad ids and tracking tokens removed.
 
 ## Requirements
 

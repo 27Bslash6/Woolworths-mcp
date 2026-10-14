@@ -114,12 +114,12 @@ The server interacts with these Woolworths internal APIs:
    - Endpoint: `/apis/ui/product/detail/{stockcode}`
    - Purpose: Get comprehensive product information
 
-3. **Browse/Category API**
-   - Endpoint: `/apis/ui/browse/category`
-   - Purpose: Browse products by category and specials
+3. **Specials Browse API**
+   - Endpoint: `/apis/ui/browse/category` (POST)
+   - Purpose: A page of one specials listing (half price, or a category's specials)
 
 4. **Categories API**
-   - Endpoint: `/apis/ui/browse/categories`
+   - Endpoint: `/apis/ui/PiesCategoriesWithSpecials`
    - Purpose: List all available categories
 
 ## Workflow
@@ -202,7 +202,7 @@ Search for the same product to compare prices and sizes.
 Build a shopping list by searching multiple products.
 
 ### 3. Deal Hunting
-Browse current specials to find the best deals.
+Browse half-price specials, or a category's specials, to find the best deals.
 
 ### 4. Product Research
 Get detailed information about products including nutritional info, ingredients, etc.
