@@ -407,7 +407,7 @@ async function handleGetSpecials({
   // The body the site's own specials browse sends; categoryId selects the listing.
   const data = await makeWoolworthsRequest<{
     TotalRecordCount?: number;
-    Bundles?: { Products: ApiProduct[] }[];
+    Bundles?: { Products?: ApiProduct[] }[];
   }>("https://www.woolworths.com.au/apis/ui/browse/category", {
     categoryId,
     pageNumber,
@@ -430,7 +430,9 @@ async function handleGetSpecials({
     totalResults: data.TotalRecordCount || 0,
     pageNumber,
     pageSize,
-    products: requireArray(data.Bundles, "Bundles").flatMap((bundle) => bundle.Products.map(slimProduct)),
+    products: requireArray(data.Bundles, "Bundles").flatMap((bundle) =>
+      requireArray(bundle.Products, "Bundles[].Products").map(slimProduct)
+    ),
   };
 }
 

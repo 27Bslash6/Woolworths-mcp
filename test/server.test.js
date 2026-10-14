@@ -172,6 +172,15 @@ test("a 200 without the array a handler slims is an isError result, not an empty
   assert.match(specials.payload.error, /no Bundles array/);
 });
 
+test("a specials bundle without Products is an isError result naming the field", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({ Bundles: [{}] }));
+
+  const { isError, payload } = await call("woolworths_get_specials", { halfPrice: true });
+
+  assert.equal(isError, true);
+  assert.match(payload.error, /no Bundles\[\]\.Products array/);
+});
+
 test("a non-2xx response is an isError result with the status and body", async (t) => {
   t.mock.method(globalThis, "fetch", async () =>
     new Response("upstream down", { status: 503, statusText: "Service Unavailable" })
