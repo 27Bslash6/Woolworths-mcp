@@ -269,7 +269,7 @@ pnpm run lint   # Oxlint, type-aware
 pnpm test       # builds, then runs the offline tests in test/ with node:test
 ```
 
-The tests stub `fetch` and never launch a browser. `test/fixtures/` holds one recorded response per endpoint the read tools call (search, specials, product detail, categories), cut to a few results, with ad ids and tracking tokens removed.
+The tests stub `fetch` and `puppeteer.launch`, so they never reach the network or start a browser. `test/fixtures/` holds one recorded response per endpoint the read tools call (search, specials, product detail, categories), cut to a few results, with ad ids and tracking tokens removed.
 
 ## Requirements
 
