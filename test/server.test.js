@@ -160,6 +160,18 @@ test("categories return two levels of the tree without the specials listings", a
   }
 });
 
+test("a 200 without the array a handler slims is an isError result, not an empty success", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({ message: "Access Denied" }));
+
+  const categories = await call("woolworths_get_categories");
+  const specials = await call("woolworths_get_specials", { halfPrice: true });
+
+  assert.equal(categories.isError, true);
+  assert.match(categories.payload.error, /no Categories array/);
+  assert.equal(specials.isError, true);
+  assert.match(specials.payload.error, /no Bundles array/);
+});
+
 test("a non-2xx response is an isError result with the status and body", async (t) => {
   t.mock.method(globalThis, "fetch", async () =>
     new Response("upstream down", { status: 503, statusText: "Service Unavailable" })

@@ -45,6 +45,14 @@ export function slimProduct(product: ApiProduct): ApiProduct {
   return Object.fromEntries(SEARCH_PRODUCT_FIELDS.map((field) => [field, product[field]]));
 }
 
+// A 200 without the array a slimming handler reads is a changed or blocked response, not an empty result.
+function requireArray<T>(value: T[] | undefined, field: string): T[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Unexpected Woolworths response: no ${field} array`);
+  }
+  return value;
+}
+
 export function setSessionCookies(cookies: Cookie[]): void {
   sessionCookies = cookies;
 }
@@ -351,7 +359,7 @@ async function handleGetSpecials({
     totalResults: data.TotalRecordCount || 0,
     pageNumber,
     pageSize,
-    products: (data.Bundles || []).flatMap((bundle) => bundle.Products.map(slimProduct)),
+    products: requireArray(data.Bundles, "Bundles").flatMap((bundle) => bundle.Products.map(slimProduct)),
   };
 }
 
@@ -375,7 +383,7 @@ async function handleGetCategories() {
   const data = await makeWoolworthsRequest<{ Categories?: ApiCategory[] }>(url);
   return {
     success: true,
-    categories: slimCategories(data.Categories || []),
+    categories: slimCategories(requireArray(data.Categories, "Categories")),
   };
 }
 
