@@ -39,9 +39,7 @@ Added additional headers to match the current Woolworths API requirements:
 - `Priority: u=1, i`
 
 ### 4. Functions Updated
-- `handleAddToCart()` - Now uses the new endpoint and request format
-- `handleRemoveFromCart()` - Now uses the new endpoint with `quantity: 0`
-- `handleUpdateCartQuantity()` - Now uses the new endpoint and request format
+- `handleUpdateTrolley()` - The one handler behind add, update and remove; uses the new endpoint and request format, and remove sends `quantity: 0`
 - `makeWoolworthsRequest()` - Updated headers to match current API requirements
 
 ## Testing
