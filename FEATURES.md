@@ -52,9 +52,9 @@
 - ✅ Hierarchical category navigation
 
 ### 7. Shopping Cart (Trolley) Management
-- ✅ Add items to cart with quantity
+- ✅ Add items to cart (adds to any quantity already in the trolley)
 - ✅ View complete cart contents
-- ✅ Update item quantities
+- ✅ Set item quantities
 - ✅ Remove items from cart
 - ✅ Cart totals and item counts
 - ✅ Line item pricing
@@ -87,10 +87,10 @@
 | 6 | `woolworths_get_product_details` | Get product details | Yes |
 | 7 | `woolworths_get_specials` | Browse special offers | Yes |
 | 8 | `woolworths_get_categories` | List product categories | Yes |
-| 9 | `woolworths_add_to_cart` | Add item to shopping cart | Yes |
+| 9 | `woolworths_add_to_cart` | Add to an item's quantity in the cart | Yes |
 | 10 | `woolworths_get_cart` | View cart contents | Yes |
 | 11 | `woolworths_remove_from_cart` | Remove item from cart | Yes |
-| 12 | `woolworths_update_cart_quantity` | Update cart item quantity | Yes |
+| 12 | `woolworths_update_cart_quantity` | Set cart item quantity | Yes |
 
 ## 🎯 Use Cases
 

@@ -39,7 +39,8 @@ Added additional headers to match the current Woolworths API requirements:
 - `Priority: u=1, i`
 
 ### 4. Functions Updated
-- `handleUpdateTrolley()` - The one handler behind add, update and remove; uses the new endpoint and request format, and remove sends `quantity: 0`
+- `handleUpdateTrolley()` - Sets a product's trolley quantity with the new endpoint and request format; update calls it directly, and remove sends `quantity: 0`
+- `handleAddToTrolley()` - The endpoint sets a quantity and does not add to it, so add reads `GET /apis/ui/Trolley` first and sets the current quantity plus the requested one. A failed read writes nothing
 - `makeWoolworthsRequest()` - Updated headers to match current API requirements
 
 ## Testing

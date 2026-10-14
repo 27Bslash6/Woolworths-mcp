@@ -106,10 +106,10 @@ Welcome! This is your complete guide to the Woolworths MCP Server.
 8. **woolworths_get_categories** - List categories
 
 ### Shopping Cart Tools
-9. **woolworths_add_to_cart** - Add item to cart
+9. **woolworths_add_to_cart** - Add to an item's quantity in the cart
 10. **woolworths_get_cart** - View cart contents
 11. **woolworths_remove_from_cart** - Remove item
-12. **woolworths_update_cart_quantity** - Update quantity
+12. **woolworths_update_cart_quantity** - Set quantity
 
 ## 📊 Project Statistics
 

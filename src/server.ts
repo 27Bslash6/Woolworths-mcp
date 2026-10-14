@@ -328,6 +328,8 @@ async function handleGetCategories() {
   };
 }
 
+const TROLLEY_URL = `https://www.woolworths.com.au/apis/ui/Trolley`;
+
 // Sets the trolley quantity of one product; quantity 0 removes it.
 async function handleUpdateTrolley({
   stockcode,
@@ -359,10 +361,29 @@ async function handleUpdateTrolley({
   };
 }
 
-async function handleGetCart() {
-  const url = `https://www.woolworths.com.au/apis/ui/Trolley`;
+// trolley/update sets a line's quantity, so an add reads the trolley and sets current + requested.
+// Only AvailableItems lines are counted: that is the trolley shape on record (test/fixtures/trolley.json).
+async function handleAddToTrolley({
+  stockcode,
+  quantity,
+}: {
+  stockcode: number;
+  quantity: number;
+}) {
+  const trolley = await makeWoolworthsRequest<{ AvailableItems?: unknown }>(TROLLEY_URL);
+  if (!Array.isArray(trolley.AvailableItems)) {
+    throw new Error("Trolley read returned no AvailableItems array; nothing was added.");
+  }
+  const line = (trolley.AvailableItems as ApiProduct[]).find((item) => item.Stockcode === stockcode);
+  const current = line ? line.Quantity : 0;
+  if (typeof current !== "number") {
+    throw new Error(`Trolley line for ${stockcode} has no numeric Quantity; nothing was added.`);
+  }
+  return handleUpdateTrolley({ stockcode, quantity: current + quantity });
+}
 
-  const data = await makeWoolworthsRequest<unknown>(url);
+async function handleGetCart() {
+  const data = await makeWoolworthsRequest<unknown>(TROLLEY_URL);
   return {
     success: true,
     cart: data,
@@ -493,14 +514,14 @@ export function createServer(): McpServer {
     "woolworths_add_to_cart",
     {
       description:
-        "Put a product in the shopping cart/trolley. This sets its quantity: it replaces a quantity already in the trolley rather than adding to it.",
+        "Add a product to the shopping cart/trolley. The quantity is added to any quantity already in the trolley.",
       inputSchema: {
         stockcode,
-        quantity: quantity.min(1).default(1).describe("Quantity to put in the trolley"),
+        quantity: quantity.min(1).default(1).describe("Quantity to add"),
       },
       annotations: { destructiveHint: true },
     },
-    (args) => toolResult(() => handleUpdateTrolley(args))
+    (args) => toolResult(() => handleAddToTrolley(args))
   );
 
   server.registerTool(
