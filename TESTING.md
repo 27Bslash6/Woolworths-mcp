@@ -150,20 +150,18 @@ pnpm run build
 
 ### 5. Specials Tests
 
-#### Test 5.1: Get All Specials
-**Command to Claude**: "What are the current specials?"
+#### Test 5.1: Get Half-Price Specials
+**Command to Claude**: "What's half price this week?"
 
 **Expected**:
-- List of products on special
-- Each has PromotionDescription
-- IsOnSpecial = true
-- Shows savings/discounts
+- `woolworths_get_specials` called with `halfPrice: true`
+- Products with IsOnSpecial = true and WasPrice about twice Price
 
 #### Test 5.2: Get Specials by Category
-**Command to Claude**: "Show me specials in meat and seafood"
+**Command to Claude**: "Show me specials in poultry, meat and seafood"
 
 **Expected**:
-- Filtered specials for specific category
+- Categories fetched first, then `woolworths_get_specials` called with that category's NodeId
 - Products from that category only
 
 ### 6. Category Tests
@@ -172,12 +170,11 @@ pnpm run build
 **Command to Claude**: "Show me all product categories"
 
 **Expected**:
-- Hierarchical category structure
-- Categories have: nodeId, description, urlFriendlyName
-- Nested children categories
+- Top-level categories, each with its subcategories
+- Categories have: NodeId, Description, UrlFriendlyName
 - Common categories present:
   - Fruit & Veg
-  - Meat & Seafood
+  - Poultry, Meat & Seafood
   - Dairy, Eggs & Fridge
   - Bakery
   - etc.

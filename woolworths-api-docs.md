@@ -10,7 +10,9 @@
 - [Search Suggestions API](#2-search-suggestions-api)
 - [Shopping Cart API](#3-shopping-cart-trolley-api)
 - [Categories API](#4-product-categories-api)
-- [Bootstrap/Settings](#5-bootstrapsettings-apis)
+- [Specials Browse API](#5-specials-browse-api)
+- [Product Detail API](#6-product-detail-api)
+- [Bootstrap/Settings](#7-bootstrapsettings-apis)
 - [Example Usage](#example-usage)
 - [Rate Limiting](#rate-limiting)
 - [Error Codes](#error-codes)
@@ -293,7 +295,7 @@ GET /apis/ui/Trolley
 
 ## 📂 4. Product Categories API
 
-Returns the category tree structure with special offers.
+Returns the whole category tree, specials listings included: about 2,700 nodes and 870 KB.
 
 #### Endpoint
 
@@ -301,29 +303,107 @@ Returns the category tree structure with special offers.
 GET /apis/ui/PiesCategoriesWithSpecials
 ```
 
-**Response:**
+**Response** (abridged; every node also carries `NodeLevel`, `ParentNodeId`, `DisplayOrder`, `ProductCount` and other flags):
 ```json
 {
-  "categories": [
+  "Categories": [
     {
-      "nodeId": "1_ABC123",
-      "description": "Fruit & Veg",
-      "urlFriendlyName": "fruit-veg",
-      "children": [
-        {
-          "nodeId": "2_DEF456",
-          "description": "Fresh Vegetables",
-          "urlFriendlyName": "fresh-vegetables"
-        }
+      "NodeId": "specialsgroup",
+      "Description": "Specials",
+      "UrlFriendlyName": "specials",
+      "IsSpecial": true,
+      "Children": [
+        { "NodeId": "specialsgroup.3676", "Description": "Half Price", "IsSpecial": true, "Children": ["..."] }
+      ]
+    },
+    {
+      "NodeId": "1-E5BEE36E",
+      "Description": "Fruit & Veg",
+      "UrlFriendlyName": "fruit-veg",
+      "IsSpecial": false,
+      "Children": [
+        { "NodeId": "1-E5BEE36E_SPECIALS", "Description": "Fruit & Veg Specials & Offers", "IsSpecial": true, "Children": [] },
+        { "NodeId": "1-5931EE89", "Description": "Fruit", "IsSpecial": false, "Children": ["..."] }
       ]
     }
   ]
 }
 ```
 
+The `Specials` group's children are the specials listings: `specialsgroup.3676` is Half Price, and `specialsgroup.3676.<NodeId>` is Half Price within a top-level category. Each top-level category also has a `<NodeId>_SPECIALS` child, its Specials & Offers listing. Pass any of these as `categoryId` to the Specials Browse API.
+
 ---
 
-## ⚙️ 5. Bootstrap/Settings APIs
+## 🏷️ 5. Specials Browse API
+
+Returns a page of one specials listing. This is the request the site's own specials pages send.
+
+#### Endpoint
+
+```http
+POST /apis/ui/browse/category
+```
+
+**Request Body:**
+```json
+{
+  "categoryId": "specialsgroup.3676",
+  "pageNumber": 1,
+  "pageSize": 36,
+  "sortType": "TraderRelevance",
+  "url": "/shop/browse/specials",
+  "location": "/shop/browse/specials",
+  "formatObject": "{\"name\":\"Specials\"}",
+  "isSpecial": false,
+  "isBundle": false,
+  "isMobile": false,
+  "filters": [],
+  "isHideUnavailableProducts": true,
+  "isRegisteredRewardCardPromotion": false,
+  "isHideEverydayMarketProducts": true,
+  "categoryVersion": "v2"
+}
+```
+
+`categoryId` selects the listing (see the Categories API). The Specials root, `specialsgroup`, is refused with a 403: there is no single listing of every special.
+
+**Response** (abridged):
+```json
+{
+  "TotalRecordCount": 1733,
+  "Bundles": [
+    {
+      "Name": "Lindt Lindor Assorted Chocolate Rose Gold Cornet",
+      "DisplayName": "Lindt Lindor Assorted Chocolate Rose Gold Cornet 331g",
+      "Products": [
+        { "Stockcode": 6035173, "Price": 18, "WasPrice": 36, "IsOnSpecial": true, "IsHalfPrice": true }
+      ]
+    }
+  ],
+  "Aggregations": [],
+  "Success": true
+}
+```
+
+Each `Products` entry has the same fields as a search result. A page of 36 is about 500 KB.
+
+---
+
+## 🔎 6. Product Detail API
+
+Returns the full record for one product.
+
+#### Endpoint
+
+```http
+GET /apis/ui/product/detail/{stockcode}
+```
+
+**Response** (top-level keys): `Product`, `Nutrition`, `VideoUrl`, `PrimaryCategory`, `AdditionalAttributes`, `TgaAttributes`, `DetailsImagePaths`, `NutritionalInformation`, `RichRelevancePlacements`, `Variants`, `VariantOptionGroups`, `IsTobacco`, `CountryOfOriginLabel`, `DiagnosticsData`. `Product` has the same fields as a search result. About 26 KB.
+
+---
+
+## ⚙️ 7. Bootstrap/Settings APIs
 
 ### Bootstrap
 

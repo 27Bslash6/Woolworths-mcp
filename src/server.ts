@@ -12,12 +12,20 @@ let currentPage: Page | null = null;
 // Argument schemas. McpServer validates every call against these before a handler runs.
 const stockcode = z.number().int().positive().describe("The product stockcode/ID");
 const quantity = z.number().int().min(0);
+const pageNumber = z.number().int().min(1);
 // 36 is the page size the site's own search uses (woolworths-api-docs.md).
 const pageSize = z.number().int().min(1).max(36);
 const sortType = z.enum(["TraderRelevance", "PriceAsc", "PriceDesc", "Name"]);
 type SortType = z.infer<typeof sortType>;
 
 type ApiProduct = Record<string, unknown>;
+type ApiCategory = {
+  NodeId: string;
+  Description: string;
+  UrlFriendlyName: string;
+  IsSpecial: boolean;
+  Children?: ApiCategory[];
+};
 
 // The search fields a caller needs to choose a product; Stockcode feeds the detail and cart tools.
 const SEARCH_PRODUCT_FIELDS = [
@@ -290,41 +298,85 @@ async function handleGetProductDetails({ stockcode }: { stockcode: number }) {
   };
 }
 
+// Specials listings are category ids from the category tree: `<NodeId>_SPECIALS` is a top-level
+// category's specials, HALF_PRICE is Half Price across the store, and `HALF_PRICE.<NodeId>` is Half
+// Price within a category. The site has no store-wide listing of every special: the Specials root
+// (`specialsgroup`) is refused.
+const HALF_PRICE = "specialsgroup.3676";
+
 async function handleGetSpecials({
   category,
+  halfPrice,
+  pageNumber,
   pageSize,
 }: {
   category?: string;
+  halfPrice: boolean;
+  pageNumber: number;
   pageSize: number;
 }) {
-  let url = `https://www.woolworths.com.au/apis/ui/browse/category`;
-
+  if (!category && !halfPrice) {
+    throw new Error(
+      "Woolworths has no store-wide listing of all specials. Pass a category NodeId from woolworths_get_categories, or halfPrice: true."
+    );
+  }
+  let categoryId = HALF_PRICE;
   if (category) {
-    url += `?category=${encodeURIComponent(category)}&filter=Specials&pageSize=${pageSize}`;
-  } else {
-    url += `?category=specials&pageSize=${pageSize}`;
+    categoryId = halfPrice ? `${HALF_PRICE}.${category}` : `${category}_SPECIALS`;
   }
 
+  // The body the site's own specials browse sends; categoryId selects the listing.
   const data = await makeWoolworthsRequest<{
     TotalRecordCount?: number;
-    Products?: unknown[];
-    Bundles?: unknown[];
-  }>(url);
+    Bundles?: { Products: ApiProduct[] }[];
+  }>("https://www.woolworths.com.au/apis/ui/browse/category", {
+    categoryId,
+    pageNumber,
+    pageSize,
+    sortType: "TraderRelevance",
+    url: "/shop/browse/specials",
+    location: "/shop/browse/specials",
+    formatObject: JSON.stringify({ name: "Specials" }),
+    isSpecial: false,
+    isBundle: false,
+    isMobile: false,
+    filters: [],
+    isHideUnavailableProducts: true,
+    isRegisteredRewardCardPromotion: false,
+    isHideEverydayMarketProducts: true,
+    categoryVersion: "v2",
+  });
   return {
     success: true,
     category: category || "all",
+    halfPrice,
     totalResults: data.TotalRecordCount || 0,
-    products: data.Products || data.Bundles || [],
+    pageNumber,
+    pageSize,
+    products: (data.Bundles || []).flatMap((bundle) => bundle.Products.map(slimProduct)),
   };
+}
+
+// The full tree is about 2,700 nodes (1.7 MB as a tool result). Keep two levels of NodeId, name and
+// slug, and drop the specials listings, which woolworths_get_specials builds from a top-level NodeId.
+function slimCategories(categories: ApiCategory[], depth = 0): unknown[] {
+  return categories
+    .filter((category) => !category.IsSpecial)
+    .map((category) => ({
+      NodeId: category.NodeId,
+      Description: category.Description,
+      UrlFriendlyName: category.UrlFriendlyName,
+      ...(depth === 0 ? { Children: slimCategories(category.Children || [], 1) } : {}),
+    }));
 }
 
 async function handleGetCategories() {
   const url = `https://www.woolworths.com.au/apis/ui/PiesCategoriesWithSpecials`;
 
-  const data = await makeWoolworthsRequest<unknown>(url);
+  const data = await makeWoolworthsRequest<{ Categories?: ApiCategory[] }>(url);
   return {
     success: true,
-    categories: data,
+    categories: slimCategories(data.Categories || []),
   };
 }
 
@@ -444,7 +496,7 @@ export function createServer(): McpServer {
         "Search for products on Woolworths. Requires session cookies to be obtained first.",
       inputSchema: {
         searchTerm: z.string().min(1).describe("The product search term"),
-        pageNumber: z.number().int().min(1).default(1).describe("Page number for pagination"),
+        pageNumber: pageNumber.default(1).describe("Page number for pagination"),
         pageSize: pageSize.default(36).describe("Number of results to return"),
         sortType: sortType.default("TraderRelevance").describe("Sort order"),
         isSpecial: z.boolean().default(false).describe("Filter for special offers only"),
@@ -467,13 +519,20 @@ export function createServer(): McpServer {
   server.registerTool(
     "woolworths_get_specials",
     {
-      description: "Get current specials and deals from Woolworths",
+      description:
+        "Get a page of current specials from Woolworths. Pass a top-level category NodeId from woolworths_get_categories, halfPrice: true, or both. The site has no store-wide listing of every special, so a call needs at least one of them.",
       inputSchema: {
         category: z
           .string()
+          .regex(/^[\w-]{1,32}$/)
           .optional()
-          .describe("Optional category filter (e.g., 'fruit-veg', 'meat-seafood')"),
-        pageSize: pageSize.default(20).describe("Number of results to return"),
+          .describe("NodeId of a top-level category from woolworths_get_categories, e.g. '1-E5BEE36E' (Fruit & Veg)"),
+        halfPrice: z
+          .boolean()
+          .default(false)
+          .describe("Only half-price specials; without a category, half-price specials across the store"),
+        pageNumber: pageNumber.default(1).describe("Page number for pagination"),
+        pageSize: pageSize.default(36).describe("Number of results to return"),
       },
       annotations: { readOnlyHint: true },
     },
@@ -483,7 +542,8 @@ export function createServer(): McpServer {
   server.registerTool(
     "woolworths_get_categories",
     {
-      description: "Get the list of available product categories",
+      description:
+        "Get the product categories: each top-level category's NodeId, name and URL slug, with its subcategories",
       annotations: { readOnlyHint: true },
     },
     () => toolResult(handleGetCategories)
