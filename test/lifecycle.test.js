@@ -60,13 +60,21 @@ function stubLaunch(t, { launchGate, closeGate } = {}) {
     const browser = new EventEmitter();
     browser.live = true;
     browser.page = fakePage();
-    browser.process = () => null;
+    // Set `closeFailures` to make that many closes reject with Chrome left running.
+    browser.closeFailures = 0;
+    browser.proc = { exitCode: null, signalCode: null, spawnargs: [] };
+    browser.process = () => browser.proc;
     browser.newPage = async () => browser.page;
     browser.close = async () => {
       if (closeGate) {
         await closeGate.promise;
       }
+      if (browser.closeFailures > 0) {
+        browser.closeFailures--;
+        throw new Error("close failed");
+      }
       browser.live = false;
+      browser.proc.exitCode = 0;
       events.push(`closed ${browsers.indexOf(browser)}`);
     };
     browsers.push(browser);
@@ -137,6 +145,41 @@ test("an open during a slow close launches only after the close finishes", async
   assert.equal(closed.isError, false);
   assert.equal(reopened.isError, false);
   assert.deepEqual(events, ["launched 0", "closed 0", "launched 1"]);
+  assert.deepEqual(live(), [browsers[1]]);
+});
+
+test("a browser whose close fails while it runs blocks every launch until it is closed", async (t) => {
+  const { browsers, events, live } = stubLaunch(t);
+  await call("woolworths_open_browser", { headless: true });
+  browsers[0].closeFailures = 2;
+
+  const closed = await call("woolworths_close_browser");
+  const refused = await call("woolworths_open_browser", { headless: true });
+
+  assert.equal(closed.isError, true);
+  assert.equal(refused.isError, true);
+  assert.match(refused.payload.error, /previous browser could not be closed/);
+  assert.equal(puppeteer.launch.mock.callCount(), 1);
+  assert.deepEqual(live(), [browsers[0]]);
+
+  // Close retries the browser left running; once it is gone, an open launches again.
+  assert.equal((await call("woolworths_close_browser")).isError, false);
+  assert.equal((await call("woolworths_open_browser", { headless: true })).isError, false);
+  assert.deepEqual(events, ["launched 0", "closed 0", "launched 1"]);
+  assert.deepEqual(live(), [browsers[1]]);
+});
+
+test("a close that fails after Chrome exited does not block the next open", async (t) => {
+  const { browsers, live } = stubLaunch(t);
+  await call("woolworths_open_browser", { headless: true });
+  browsers[0].close = async () => {
+    browsers[0].live = false;
+    browsers[0].proc.exitCode = 0;
+    throw new Error("profile cleanup failed");
+  };
+
+  assert.equal((await call("woolworths_close_browser")).isError, true);
+  assert.equal((await call("woolworths_open_browser", { headless: true })).isError, false);
   assert.deepEqual(live(), [browsers[1]]);
 });
 

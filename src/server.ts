@@ -24,6 +24,26 @@ function serialise<T>(step: () => Promise<T>): Promise<T> {
   return run;
 }
 
+// A browser whose close failed while its process kept running. No browser launches until it is
+// gone, so a failed close can never leave two live Chromes; every open or close retries it.
+let unclosed: Browser | null = null;
+
+function isRunning(browser: Browser): boolean {
+  const proc = browser.process();
+  return !proc || (proc.exitCode === null && proc.signalCode === null);
+}
+
+// Runs inside serialise. Puppeteer's close falls back to killing Chrome, so it rarely fails live.
+async function shutDown(closing: Browser): Promise<void> {
+  try {
+    await closing.close();
+    unclosed = null;
+  } catch (error) {
+    unclosed = isRunning(closing) ? closing : null;
+    throw error;
+  }
+}
+
 function currentSession(): Session {
   if (!session) {
     throw new Error("Browser is not open. Use woolworths_open_browser first.");
@@ -69,16 +89,16 @@ export function setSessionCookies(cookies: Cookie[]): void {
   sessionCookies = cookies;
 }
 
-// Resolves false when no browser was open. Forgets the browser before closing it, so a failed
-// close cannot leave the server stuck on it.
+// Resolves false when no browser was open. Forgets the session before closing it, so a failed
+// close cannot leave the server stuck on it; a browser that stays running is kept in `unclosed`.
 export function closeBrowser(): Promise<boolean> {
   return serialise(async () => {
-    if (!session) {
+    const closing = session?.browser ?? unclosed;
+    if (!closing) {
       return false;
     }
-    const closing = session.browser;
     session = null;
-    await closing.close();
+    await shutDown(closing);
     return true;
   });
 }
@@ -136,6 +156,13 @@ async function launchSession(headless: boolean): Promise<Session> {
   if (session) {
     throw new Error("Browser is already open. Close it first with woolworths_close_browser.");
   }
+  if (unclosed) {
+    await shutDown(unclosed).catch((error: unknown) => {
+      throw new Error(
+        `The previous browser could not be closed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    });
+  }
 
   // The sandbox is always on: strip Puppeteer's own opt-out (PUPPETEER_DANGEROUS_NO_SANDBOX adds
   // --no-sandbox to its defaults), then refuse any launch that still disabled it.
@@ -169,7 +196,8 @@ async function launchSession(headless: boolean): Promise<Session> {
     });
     return opened;
   } catch (error) {
-    await launched.close();
+    // Report the launch failure; a Chrome that will not close stays tracked in `unclosed`.
+    await shutDown(launched).catch(() => undefined);
     throw error;
   }
 }
