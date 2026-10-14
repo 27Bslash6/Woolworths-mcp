@@ -135,12 +135,9 @@ test("an open during a slow close launches only after the close finishes", async
   const [closed, reopened] = await Promise.all([closing, reopening]);
 
   assert.equal(closed.isError, false);
-  assert.equal(browsers[0].live, false);
-  assert.ok(live().length <= 1);
-  assert.ok(!live().includes(browsers[0]));
-  if (!reopened.isError) {
-    assert.deepEqual(events, ["launched 0", "closed 0", "launched 1"]);
-  }
+  assert.equal(reopened.isError, false);
+  assert.deepEqual(events, ["launched 0", "closed 0", "launched 1"]);
+  assert.deepEqual(live(), [browsers[1]]);
 });
 
 // Closes the open session and opens a new one, while an earlier call is still parked.
