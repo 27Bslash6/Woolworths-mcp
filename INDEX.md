@@ -68,7 +68,7 @@ Welcome! This is your complete guide to the Woolworths MCP Server.
 ## 📁 Source Code
 
 ### Main Application
-- **src/index.ts** - Complete MCP server implementation (~650 lines)
+- **src/server.ts** - MCP tools and Woolworths API calls; **src/index.ts** starts it on stdio
   - Browser automation with Puppeteer
   - 12 MCP tools
   - Session cookie management
@@ -137,7 +137,7 @@ Welcome! This is your complete guide to the Woolworths MCP Server.
 
 ### Advanced
 1. Study [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) architecture
-2. Review source code in `src/index.ts`
+2. Review source code in `src/server.ts`
 3. Run test suite from [TESTING.md](TESTING.md)
 4. Consider contributing enhancements
 
@@ -175,7 +175,7 @@ A: Yes! See [README.md](README.md) tools 9-12
 
 **Disclaimer**: This is an unofficial tool for educational purposes. Not affiliated with Woolworths Group Limited. See [woolworths-api-docs.md](woolworths-api-docs.md) disclaimer for details.
 
-**License**: MIT
+**License**: GPL-3.0
 
 ---
 

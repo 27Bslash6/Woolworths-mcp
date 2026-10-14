@@ -33,7 +33,13 @@ jobs:
 
       - run: pnpm run build
 
-      - name: MCP server answers initialize and tools/list
+      - run: pnpm run lint
+
+      - run: pnpm test
+
+      - run: pnpm audit --audit-level high
+
+      - name: MCP server answers initialize and lists its tools
         shell: bash # adds -o pipefail, so a crash or hang fails the step
         run: |
           printf '%s\n' \
@@ -41,4 +47,44 @@ jobs:
             '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
             '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
             | timeout 20 node dist/index.js \
-            | jq -e 'select(.id == 2) | .result.tools | length > 0'
+            | jq -e --slurpfile names test/tool-names.json \
+              'select(.id == 2) | .result.tools | type == "array" and (map(.name) | sort) == $names[0]'
+
+  windows-install:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      # Check out the LF-only bytes the repo ships, not a CRLF conversion of them.
+      - run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # stdin is NUL, so every pause returns at once instead of hanging the job.
+      - name: install.bat runs to exit 0
+        shell: pwsh
+        run: |
+          if ([IO.File]::ReadAllBytes("install.bat") -contains 13) { throw "install.bat contains a CR byte" }
+          cmd /c "install.bat < NUL"
+          if ($LASTEXITCODE -ne 0) { throw "install.bat exited $LASTEXITCODE" }
+
+      - name: install.bat reports a failed Step 1
+        shell: pwsh
+        run: |
+          # A dependency missing from pnpm-lock.yaml makes --frozen-lockfile fail.
+          node -e "const fs = require('fs'); const p = JSON.parse(fs.readFileSync('package.json')); p.dependencies['is-number'] = '7.0.0'; fs.writeFileSync('package.json', JSON.stringify(p, null, 2));"
+          $out = cmd /c "install.bat < NUL 2>&1"
+          $code = $LASTEXITCODE
+          $out
+          if ($code -ne 1) { throw "expected exit 1, got $code" }
+          $text = $out -join "`n"
+          if ($text -notmatch "Installed pnpm version:\s*\n\d+\.\d+\.\d+") { throw "no pnpm version line after the probe" }
+          if ($text -notmatch "needs pnpm 11") { throw "no 'needs pnpm 11' hint" }
+          exit 0

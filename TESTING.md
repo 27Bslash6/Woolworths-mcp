@@ -418,7 +418,7 @@ npm install --save-dev jest @types/jest ts-jest
 ## Debugging Tips
 
 ### Enable Verbose Logging
-Modify `src/index.ts` to add console.error statements
+Modify `src/server.ts` to add console.error statements
 
 ### Inspect Network Traffic
 Use Chrome DevTools Network tab while browser is open
