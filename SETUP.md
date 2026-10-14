@@ -106,7 +106,7 @@ The first thing you need to do is capture session cookies from Woolworths:
    Now you can search products, view specials, etc.:
    ```
    "Search for milk"
-   "What are the current specials?"
+   "What's half price this week?"
    "Show me the fruit and veg category"
    ```
 
@@ -130,8 +130,8 @@ Assistant: [Returns list of bread products with prices]
 User: Search for milk
 Assistant: [Returns list of milk products]
 
-User: What are today's specials?
-Assistant: [Returns current specials]
+User: What's half price this week?
+Assistant: [Returns half-price specials]
 ```
 
 ### Product Research

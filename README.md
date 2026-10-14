@@ -130,7 +130,7 @@ Get detailed information about a specific product by its stockcode.
 Get a page of current specials, the listing the site's own specials pages show. Pass a `category`, `halfPrice: true`, or both: the site has no store-wide listing of every special.
 
 **Parameters:**
-- `category` (string, optional): NodeId of a top-level category from `woolworths_get_categories`, e.g. `1-E5BEE36E` (Fruit & Veg) or `1_39FD49C` (Pantry). Returns that category's Specials & Offers listing, which can include multibuy offers not marked `IsOnSpecial`.
+- `category` (string, optional): NodeId of a top-level category from `woolworths_get_categories`, e.g. `1-E5BEE36E` (Fruit & Veg) or `1_39FD49C` (Pantry). Returns that category's Specials & Offers listing, which can include multibuy offers not marked `IsOnSpecial`. A subcategory NodeId is not a specials listing; use its top-level parent.
 - `halfPrice` (boolean, optional): Only half-price specials (default: false). Without a `category`, returns half-price specials across the store.
 - `pageNumber` (integer, optional, 1 or more): Page number (default: 1)
 - `pageSize` (integer, optional, 1 to 36): Number of results to return (default: 36)

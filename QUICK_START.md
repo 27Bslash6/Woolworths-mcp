@@ -71,7 +71,7 @@ Now you can:
 
 > "Search for milk"
 
-> "What are today's specials?"
+> "What's half price this week?"
 
 > "Show me the fruit and vegetables category"
 
@@ -84,7 +84,7 @@ Now you can:
 | What you want | Say to Claude |
 |---------------|---------------|
 | Search products | "Search for [product name]" |
-| View specials | "What are the current specials?" |
+| View specials | "What's half price this week?" |
 | Product details | "Get details for stockcode [number]" |
 | Categories | "Show me the product categories" |
 | Add to cart | "Add stockcode [number] to my cart" |

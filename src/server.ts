@@ -348,8 +348,6 @@ async function handleGetSpecials({
   });
   return {
     success: true,
-    category: category || "all",
-    halfPrice,
     totalResults: data.TotalRecordCount || 0,
     pageNumber,
     pageSize,
@@ -359,15 +357,16 @@ async function handleGetSpecials({
 
 // The full tree is about 2,700 nodes (1.7 MB as a tool result). Keep two levels of NodeId, name and
 // slug, and drop the specials listings, which woolworths_get_specials builds from a top-level NodeId.
-function slimCategories(categories: ApiCategory[], depth = 0): unknown[] {
-  return categories
-    .filter((category) => !category.IsSpecial)
-    .map((category) => ({
-      NodeId: category.NodeId,
-      Description: category.Description,
-      UrlFriendlyName: category.UrlFriendlyName,
-      ...(depth === 0 ? { Children: slimCategories(category.Children || [], 1) } : {}),
-    }));
+function slimCategory({ NodeId, Description, UrlFriendlyName }: ApiCategory) {
+  return { NodeId, Description, UrlFriendlyName };
+}
+
+function slimCategories(categories: ApiCategory[]) {
+  const plain = (list: ApiCategory[] = []) => list.filter((category) => !category.IsSpecial);
+  return plain(categories).map((category) => ({
+    ...slimCategory(category),
+    Children: plain(category.Children).map(slimCategory),
+  }));
 }
 
 async function handleGetCategories() {
@@ -543,7 +542,7 @@ export function createServer(): McpServer {
     "woolworths_get_categories",
     {
       description:
-        "Get the product categories: each top-level category's NodeId, name and URL slug, with its subcategories",
+        "Get the product categories: each top-level category's NodeId, name and URL slug, with its subcategories. woolworths_get_specials takes a top-level NodeId only, not a subcategory's.",
       annotations: { readOnlyHint: true },
     },
     () => toolResult(handleGetCategories)

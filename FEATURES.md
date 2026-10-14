@@ -46,7 +46,7 @@
 
 ### 6. Category Browsing
 - ✅ Top-level categories and their subcategories
-- ✅ Category NodeIds, which the specials tool takes
+- ✅ Top-level category NodeIds, which the specials tool takes (subcategory NodeIds are not specials listings)
 - ✅ URL-friendly category names
 
 ### 7. Shopping Cart (Trolley) Management
