@@ -15,6 +15,8 @@ const specialsFixture = readJson("./fixtures/specials-half-price-pantry.json");
 const detailFixture = readJson("./fixtures/product-detail-223104.json");
 // The Specials group and two top-level categories of the category tree.
 const categoriesFixture = readJson("./fixtures/categories.json");
+// One recorded anonymous trolley holding stockcode 50923 at quantity 1; it carries no session identifiers.
+const trolleyFixture = readJson("./fixtures/trolley.json");
 const productFields = ["Stockcode", "DisplayName", "Brand", "PackageSize", "Price", "WasPrice", "IsOnSpecial", "CupString", "Unit", "IsAvailable"];
 const BASE = "https://www.woolworths.com.au";
 
@@ -209,4 +211,68 @@ test("closing a browser that is not open is an isError result", async () => {
 
   assert.equal(isError, true);
   assert.deepEqual(payload, { success: false, error: "Browser is not open." });
+});
+
+// Stubs the trolley read with `trolley` and the update with a 200; returns every request made.
+function stubTrolley(t, trolley) {
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    requests.push({ url, method: init.method, body: init.body && JSON.parse(init.body) });
+    return Response.json(url.endsWith("/apis/ui/Trolley") ? trolley : { UpdatedItems: [] });
+  });
+  return requests;
+}
+
+const withQuantity = (stockcode, quantity) => ({
+  ...trolleyFixture,
+  AvailableItems: trolleyFixture.AvailableItems.map((item) => ({ ...item, Stockcode: stockcode, Quantity: quantity })),
+});
+
+for (const { name, trolley, add, sent } of [
+  { name: "adds to a quantity already in the trolley", trolley: withQuantity(50923, 3), add: 1, sent: 4 },
+  { name: "sets the requested quantity for a product not in the trolley", trolley: withQuantity(1, 3), add: 2, sent: 2 },
+]) {
+  test(`add_to_cart ${name}`, async (t) => {
+    const requests = stubTrolley(t, trolley);
+
+    const { isError } = await call("woolworths_add_to_cart", { stockcode: 50923, quantity: add });
+
+    assert.equal(isError, false);
+    assert.deepEqual(
+      requests.map(({ url, method }) => `${method} ${new URL(url).pathname}`),
+      ["GET /apis/ui/Trolley", "POST /api/v3/ui/trolley/update"]
+    );
+    assert.equal(requests[1].body.items[0].stockcode, 50923);
+    assert.equal(requests[1].body.items[0].quantity, sent);
+  });
+}
+
+test("add_to_cart writes to the session it read, even if the cookies change in between", async (t) => {
+  const cookies = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    cookies.push(init.headers.Cookie);
+    if (!url.endsWith("/apis/ui/Trolley")) {
+      return Response.json({ UpdatedItems: [] });
+    }
+    // A woolworths_get_cookies for another session lands while the trolley read is in flight.
+    setSessionCookies([{ name: "session", value: "other" }]);
+    return Response.json(withQuantity(50923, 3));
+  });
+
+  const { isError } = await call("woolworths_add_to_cart", { stockcode: 50923, quantity: 1 });
+
+  assert.equal(isError, false);
+  assert.deepEqual(cookies, ["session=test", "session=test"]);
+});
+
+test("add_to_cart never writes when the trolley read has no items array", async (t) => {
+  const { AvailableItems: _, ...noItems } = trolleyFixture;
+  const requests = stubTrolley(t, noItems);
+
+  const { isError, payload } = await call("woolworths_add_to_cart", { stockcode: 50923, quantity: 1 });
+
+  assert.equal(isError, true);
+  assert.match(payload.error, /AvailableItems/);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, "GET");
 });

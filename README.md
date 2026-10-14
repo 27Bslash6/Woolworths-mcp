@@ -153,11 +153,11 @@ Get the product categories: each top-level category with its subcategories, as `
 
 ### 9. woolworths_add_to_cart
 
-Put a product in the shopping cart/trolley. This sets its quantity: if the product is already in the trolley, its quantity is replaced, not added to.
+Add a product to the shopping cart/trolley. The quantity is added to any quantity already in the trolley: the tool reads the trolley, then sets the current quantity plus the requested one. If the trolley read fails, nothing is written. To set an exact quantity, use `woolworths_update_cart_quantity`.
 
 **Parameters:**
 - `stockcode` (positive integer, required): The product stockcode/ID
-- `quantity` (integer, optional, 1 or more): Quantity to put in the trolley (default: 1)
+- `quantity` (integer, optional, 1 or more): Quantity to add (default: 1)
 
 **Example:**
 ```json
@@ -182,7 +182,7 @@ Remove a product from the shopping cart/trolley.
 
 ### 12. woolworths_update_cart_quantity
 
-Update the quantity of a product in the shopping cart/trolley.
+Set the quantity of a product in the shopping cart/trolley. It replaces any quantity already there; 0 removes the product.
 
 **Parameters:**
 - `stockcode` (positive integer, required): The product stockcode/ID
@@ -240,7 +240,7 @@ Once cookies are captured, the server makes authenticated requests to Woolworths
 - Product Detail API: `/apis/ui/product/detail/{stockcode}` (GET)
 - Specials Browse API: `/apis/ui/browse/category` (POST; `categoryId` selects the specials listing)
 - Categories API: `/apis/ui/PiesCategoriesWithSpecials` (GET)
-- Shopping Cart API: `/apis/ui/Trolley` (GET, cart contents) and `/api/v3/ui/trolley/update` (POST; add, update, and remove with quantity 0)
+- Shopping Cart API: `/apis/ui/Trolley` (GET, cart contents) and `/api/v3/ui/trolley/update` (POST; sets a product's quantity, 0 removes it)
 
 ### Session Management
 

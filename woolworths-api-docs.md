@@ -235,6 +235,10 @@ GET /apis/ui/search-suggestions/suggestionsb2c?searchTerm=mil
 
 One endpoint sets the trolley quantity of a product. A quantity of 0 removes it.
 
+It sets; it does not add. Verified live on 2026-10-14 from a logged-out session: posting quantity 1 twice for the same stockcode left quantity 1 in the trolley. To add to a quantity, read the trolley and send the current quantity plus the new one, as `woolworths_add_to_cart` does.
+
+On a logged-out session, the first update response sets the guest session cookies that hold the trolley. Later requests must send them, or each one starts a new, empty trolley.
+
 #### Endpoint
 
 ```http
@@ -272,22 +276,34 @@ See [CART_API_UPDATE.md](CART_API_UPDATE.md) for the headers the endpoint expect
 GET /apis/ui/Trolley
 ```
 
-**Response:**
+**Response** (abridged from a recorded logged-out response, `test/fixtures/trolley.json`; lines in the trolley are in `AvailableItems`):
 ```json
 {
-  "items": [
+  "AvailableItems": [
     {
-      "stockcode": 123456,
-      "name": "Product Name",
-      "quantity": 2,
-      "price": 4.50,
-      "lineTotal": 9.00,
-      "imageUrl": "https://cdn0.woolworths.media/content/wowproductimages/small/123456.jpg"
+      "Stockcode": 50923,
+      "Name": "Woolworths Full Cream Milk",
+      "DisplayName": "Woolworths Full Cream Milk 1L",
+      "Quantity": 1,
+      "QuantityInTrolley": 1,
+      "SalePrice": 1.75,
+      "ListPrice": 1.75,
+      "IsAvailable": true,
+      "SmallImageFile": "https://cdn0.woolworths.media/content/wowproductimages/small/050923.jpg"
     }
   ],
-  "subtotal": 45.50,
-  "totalSavings": 5.00,
-  "itemCount": 10
+  "UnavailableItems": [],
+  "RestrictedItems": [],
+  "Errors": [
+    {
+      "Type": "InvalidSubtotal",
+      "Message": "Pick up has a $50 minimum spend. Add $48.25 of Woolworths items to continue.",
+      "ErrorCode": null
+    }
+  ],
+  "Totals": { "SubTotal": 1.75, "Total": 1.75, "TotalSavings": 0 },
+  "TotalTrolleyItemQuantity": 1,
+  "TrolleyItemCount": 1
 }
 ```
 
