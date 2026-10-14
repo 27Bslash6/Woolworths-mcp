@@ -6,18 +6,74 @@ import { assertWoolworthsUrl } from "./navigation.js";
 
 // Cookie storage
 let sessionCookies: Cookie[] = [];
-let browser: Browser | null = null;
-let currentPage: Page | null = null;
+
+// One browser and its tab. Calls capture the session they start on and check it is still current
+// after each await, so a close or reopen mid-call can never hand them a newer session's page.
+interface Session {
+  browser: Browser;
+  page: Page;
+}
+let session: Session | null = null;
+
+// Launch and close run one at a time, chained here, so concurrent calls cannot orphan a browser.
+let lifecycle: Promise<unknown> = Promise.resolve();
+
+function serialise<T>(step: () => Promise<T>): Promise<T> {
+  const run = lifecycle.then(step, step);
+  lifecycle = run.catch(() => undefined);
+  return run;
+}
+
+// A browser whose close failed while its process kept running. No browser launches until it is
+// gone, so a failed close can never leave two live Chromes; every open or close retries it.
+let unclosed: Browser | null = null;
+
+function isRunning(browser: Browser): boolean {
+  const proc = browser.process();
+  return !proc || (proc.exitCode === null && proc.signalCode === null);
+}
+
+// Runs inside serialise. Puppeteer's close falls back to killing Chrome, so it rarely fails live.
+async function shutDown(closing: Browser): Promise<void> {
+  try {
+    await closing.close();
+    unclosed = null;
+  } catch (error) {
+    unclosed = isRunning(closing) ? closing : null;
+    throw error;
+  }
+}
+
+function currentSession(): Session {
+  if (!session) {
+    throw new Error("Browser is not open. Use woolworths_open_browser first.");
+  }
+  return session;
+}
+
+function assertCurrent(started: Session): void {
+  if (session !== started) {
+    throw new Error("The browser was closed or reopened while this call ran.");
+  }
+}
 
 // Argument schemas. McpServer validates every call against these before a handler runs.
 const stockcode = z.number().int().positive().describe("The product stockcode/ID");
 const quantity = z.number().int().min(0);
+const pageNumber = z.number().int().min(1);
 // 36 is the page size the site's own search uses (woolworths-api-docs.md).
 const pageSize = z.number().int().min(1).max(36);
 const sortType = z.enum(["TraderRelevance", "PriceAsc", "PriceDesc", "Name"]);
 type SortType = z.infer<typeof sortType>;
 
 type ApiProduct = Record<string, unknown>;
+type ApiCategory = {
+  NodeId: string;
+  Description: string;
+  UrlFriendlyName: string;
+  IsSpecial: boolean;
+  Children?: ApiCategory[];
+};
 
 // The search fields a caller needs to choose a product; Stockcode feeds the detail and cart tools.
 const SEARCH_PRODUCT_FIELDS = [
@@ -37,19 +93,30 @@ export function slimProduct(product: ApiProduct): ApiProduct {
   return Object.fromEntries(SEARCH_PRODUCT_FIELDS.map((field) => [field, product[field]]));
 }
 
+// A 200 without the array a slimming handler reads is a changed or blocked response, not an empty result.
+function requireArray<T>(value: T[] | undefined, field: string): T[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Unexpected Woolworths response: no ${field} array`);
+  }
+  return value;
+}
+
 export function setSessionCookies(cookies: Cookie[]): void {
   sessionCookies = cookies;
 }
 
-// Forgets the browser before closing it, so a failed close cannot leave the server stuck on it.
-export async function closeBrowser(): Promise<void> {
-  if (!browser) {
-    return;
-  }
-  const closing = browser;
-  browser = null;
-  currentPage = null;
-  await closing.close();
+// Resolves false when no browser was open. Forgets the session before closing it, so a failed
+// close cannot leave the server stuck on it; a browser that stays running is kept in `unclosed`.
+export function closeBrowser(): Promise<boolean> {
+  return serialise(async () => {
+    const closing = session?.browser ?? unclosed;
+    if (!closing) {
+      return false;
+    }
+    session = null;
+    await shutDown(closing);
+    return true;
+  });
 }
 
 // Helper function to get cookie header string
@@ -99,9 +166,18 @@ async function makeWoolworthsRequest<T>(url: string, body?: unknown): Promise<T>
 }
 
 // Tool handlers. A failure throws; toolResult turns it into an isError result.
-async function handleOpenBrowser({ headless }: { headless: boolean }) {
-  if (browser) {
+
+// Runs inside serialise: a browser that launched but cannot become the session is closed again.
+async function launchSession(headless: boolean): Promise<Session> {
+  if (session) {
     throw new Error("Browser is already open. Close it first with woolworths_close_browser.");
+  }
+  if (unclosed) {
+    await shutDown(unclosed).catch((error: unknown) => {
+      throw new Error(
+        `The previous browser could not be closed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    });
   }
 
   // The sandbox is always on: strip Puppeteer's own opt-out (PUPPETEER_DANGEROUS_NO_SANDBOX adds
@@ -116,44 +192,53 @@ async function handleOpenBrowser({ headless }: { headless: boolean }) {
     ignoreDefaultArgs: sandboxFlags,
     defaultViewport: { width: 1280, height: 800 },
   });
-  const spawnArgs = launched.process()?.spawnargs ?? [];
-  if (spawnArgs.some((arg) => sandboxFlags.includes(arg))) {
-    await launched.close();
-    throw new Error("Refusing to run Chromium with its sandbox disabled");
-  }
-  browser = launched;
-  // The user can close a headed window directly; forget that browser so it can be opened again.
-  launched.once("disconnected", () => {
-    if (browser === launched) {
-      browser = null;
-      currentPage = null;
+  try {
+    const spawnArgs = launched.process()?.spawnargs ?? [];
+    if (spawnArgs.some((arg) => sandboxFlags.includes(arg))) {
+      throw new Error("Refusing to run Chromium with its sandbox disabled");
     }
-  });
+    const page = await launched.newPage();
+    // Set user agent to appear more like a real browser
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    );
+    const opened = { browser: launched, page };
+    session = opened;
+    // The user can close a headed window directly; forget that browser so it can be opened again.
+    launched.once("disconnected", () => {
+      if (session === opened) {
+        session = null;
+      }
+    });
+    return opened;
+  } catch (error) {
+    // Report the launch failure; a Chrome that will not close stays tracked in `unclosed`.
+    await shutDown(launched).catch(() => undefined);
+    throw error;
+  }
+}
 
-  currentPage = await browser.newPage();
-
-  // Set user agent to appear more like a real browser
-  await currentPage.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-  );
+async function handleOpenBrowser({ headless }: { headless: boolean }) {
+  // The homepage load runs outside the lifecycle chain, so a close never waits on a slow page.
+  const opened = await serialise(() => launchSession(headless));
 
   // Navigate to Woolworths homepage
-  await currentPage.goto("https://www.woolworths.com.au", {
+  await opened.page.goto("https://www.woolworths.com.au", {
     waitUntil: "networkidle2",
   });
+  assertCurrent(opened);
 
   return {
     success: true,
     message:
       "Browser opened and navigated to Woolworths homepage. You can now log in manually if needed, then use woolworths_get_cookies to capture the session.",
-    url: currentPage.url(),
+    url: opened.page.url(),
   };
 }
 
 async function handleNavigate({ url }: { url: string }) {
-  if (!browser || !currentPage) {
-    throw new Error("Browser is not open. Use woolworths_open_browser first.");
-  }
+  const started = currentSession();
+  const { page } = started;
 
   // `url` comes from the model, which may be steered by page text it has read.
   const target = assertWoolworthsUrl(url);
@@ -161,18 +246,19 @@ async function handleNavigate({ url }: { url: string }) {
   // Navigate the validated href, so Node and Chromium never parse different input.
   let navigationError: unknown;
   try {
-    await currentPage.goto(target.href, { waitUntil: "networkidle2" });
+    await page.goto(target.href, { waitUntil: "networkidle2" });
   } catch (error) {
     navigationError = error;
   }
+  assertCurrent(started);
 
   // Redirects are followed, so the tab can still land off-domain; blank it rather than leave it there.
-  const finalUrl = currentPage.url();
+  const finalUrl = page.url();
   try {
     assertWoolworthsUrl(finalUrl);
   } catch (blocked) {
     const cause = navigationError instanceof Error ? `; ${navigationError.message}` : "";
-    const blanking = await currentPage.goto("about:blank").then(
+    const blanking = await page.goto("about:blank").then(
       () => "",
       (error) => `; blanking failed: ${error instanceof Error ? error.message : error}`
     );
@@ -182,26 +268,29 @@ async function handleNavigate({ url }: { url: string }) {
     throw navigationError;
   }
 
+  const title = await page.title();
+  assertCurrent(started);
   return {
     success: true,
     url: finalUrl,
-    title: await currentPage.title(),
+    title,
   };
 }
 
 async function handleGetCookies() {
-  if (!browser || !currentPage) {
-    throw new Error("Browser is not open. Use woolworths_open_browser first.");
-  }
+  const started = currentSession();
+  const { page } = started;
 
   // The tab can drift off-domain after woolworths_navigate returns (a slow redirect, in-page script).
   try {
-    assertWoolworthsUrl(currentPage.url());
+    assertWoolworthsUrl(page.url());
   } catch (blocked) {
     throw new Error(`Cookie capture refused (${(blocked as Error).message})`);
   }
 
-  const cookies = await currentPage.cookies();
+  const cookies = await page.cookies();
+  // A session closed or reopened meanwhile must not replace the cookies of the one now in use.
+  assertCurrent(started);
   setSessionCookies(cookies);
 
   return {
@@ -218,11 +307,9 @@ async function handleGetCookies() {
 }
 
 async function handleCloseBrowser() {
-  if (!browser) {
+  if (!(await closeBrowser())) {
     throw new Error("Browser is not open.");
   }
-
-  await closeBrowser();
 
   return {
     success: true,
@@ -290,41 +377,86 @@ async function handleGetProductDetails({ stockcode }: { stockcode: number }) {
   };
 }
 
+// Specials listings are category ids from the category tree: `<NodeId>_SPECIALS` is a top-level
+// category's specials, HALF_PRICE is Half Price across the store, and `HALF_PRICE.<NodeId>` is Half
+// Price within a category. The site has no store-wide listing of every special: the Specials root
+// (`specialsgroup`) is refused.
+const HALF_PRICE = "specialsgroup.3676";
+
 async function handleGetSpecials({
   category,
+  halfPrice,
+  pageNumber,
   pageSize,
 }: {
   category?: string;
+  halfPrice: boolean;
+  pageNumber: number;
   pageSize: number;
 }) {
-  let url = `https://www.woolworths.com.au/apis/ui/browse/category`;
-
+  if (!category && !halfPrice) {
+    throw new Error(
+      "Woolworths has no store-wide listing of all specials. Pass a category NodeId from woolworths_get_categories, or halfPrice: true."
+    );
+  }
+  let categoryId = HALF_PRICE;
   if (category) {
-    url += `?category=${encodeURIComponent(category)}&filter=Specials&pageSize=${pageSize}`;
-  } else {
-    url += `?category=specials&pageSize=${pageSize}`;
+    categoryId = halfPrice ? `${HALF_PRICE}.${category}` : `${category}_SPECIALS`;
   }
 
+  // The body the site's own specials browse sends; categoryId selects the listing.
   const data = await makeWoolworthsRequest<{
     TotalRecordCount?: number;
-    Products?: unknown[];
-    Bundles?: unknown[];
-  }>(url);
+    Bundles?: { Products?: ApiProduct[] }[];
+  }>("https://www.woolworths.com.au/apis/ui/browse/category", {
+    categoryId,
+    pageNumber,
+    pageSize,
+    sortType: "TraderRelevance",
+    url: "/shop/browse/specials",
+    location: "/shop/browse/specials",
+    formatObject: JSON.stringify({ name: "Specials" }),
+    isSpecial: false,
+    isBundle: false,
+    isMobile: false,
+    filters: [],
+    isHideUnavailableProducts: true,
+    isRegisteredRewardCardPromotion: false,
+    isHideEverydayMarketProducts: true,
+    categoryVersion: "v2",
+  });
   return {
     success: true,
-    category: category || "all",
     totalResults: data.TotalRecordCount || 0,
-    products: data.Products || data.Bundles || [],
+    pageNumber,
+    pageSize,
+    products: requireArray(data.Bundles, "Bundles").flatMap((bundle) =>
+      requireArray(bundle.Products, "Bundles[].Products").map(slimProduct)
+    ),
   };
+}
+
+// The full tree is about 2,700 nodes (1.7 MB as a tool result). Keep two levels of NodeId, name and
+// slug, and drop the specials listings, which woolworths_get_specials builds from a top-level NodeId.
+function slimCategory({ NodeId, Description, UrlFriendlyName }: ApiCategory) {
+  return { NodeId, Description, UrlFriendlyName };
+}
+
+function slimCategories(categories: ApiCategory[]) {
+  const plain = (list: ApiCategory[] = []) => list.filter((category) => !category.IsSpecial);
+  return plain(categories).map((category) => ({
+    ...slimCategory(category),
+    Children: plain(category.Children).map(slimCategory),
+  }));
 }
 
 async function handleGetCategories() {
   const url = `https://www.woolworths.com.au/apis/ui/PiesCategoriesWithSpecials`;
 
-  const data = await makeWoolworthsRequest<unknown>(url);
+  const data = await makeWoolworthsRequest<{ Categories?: ApiCategory[] }>(url);
   return {
     success: true,
-    categories: data,
+    categories: slimCategories(requireArray(data.Categories, "Categories")),
   };
 }
 
@@ -465,7 +597,7 @@ export function createServer(): McpServer {
         "Search for products on Woolworths. Requires session cookies to be obtained first.",
       inputSchema: {
         searchTerm: z.string().min(1).describe("The product search term"),
-        pageNumber: z.number().int().min(1).default(1).describe("Page number for pagination"),
+        pageNumber: pageNumber.default(1).describe("Page number for pagination"),
         pageSize: pageSize.default(36).describe("Number of results to return"),
         sortType: sortType.default("TraderRelevance").describe("Sort order"),
         isSpecial: z.boolean().default(false).describe("Filter for special offers only"),
@@ -488,13 +620,20 @@ export function createServer(): McpServer {
   server.registerTool(
     "woolworths_get_specials",
     {
-      description: "Get current specials and deals from Woolworths",
+      description:
+        "Get a page of current specials from Woolworths. Pass a top-level category NodeId from woolworths_get_categories, halfPrice: true, or both. The site has no store-wide listing of every special, so a call needs at least one of them.",
       inputSchema: {
         category: z
           .string()
+          .regex(/^[\w-]{1,32}$/)
           .optional()
-          .describe("Optional category filter (e.g., 'fruit-veg', 'meat-seafood')"),
-        pageSize: pageSize.default(20).describe("Number of results to return"),
+          .describe("NodeId of a top-level category from woolworths_get_categories, e.g. '1-E5BEE36E' (Fruit & Veg)"),
+        halfPrice: z
+          .boolean()
+          .default(false)
+          .describe("Only half-price specials; without a category, half-price specials across the store"),
+        pageNumber: pageNumber.default(1).describe("Page number for pagination"),
+        pageSize: pageSize.default(36).describe("Number of results to return"),
       },
       annotations: { readOnlyHint: true },
     },
@@ -504,7 +643,8 @@ export function createServer(): McpServer {
   server.registerTool(
     "woolworths_get_categories",
     {
-      description: "Get the list of available product categories",
+      description:
+        "Get the product categories: each top-level category's NodeId, name and URL slug, with its subcategories. woolworths_get_specials takes a top-level NodeId only, not a subcategory's.",
       annotations: { readOnlyHint: true },
     },
     () => toolResult(handleGetCategories)

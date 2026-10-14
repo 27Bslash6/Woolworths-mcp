@@ -39,17 +39,15 @@
 - ✅ Allergen information
 
 ### 5. Specials & Deals
-- ✅ Browse current promotional offers
-- ✅ Filter specials by category
+- ✅ Browse half-price specials across the store
+- ✅ Browse a category's specials, optionally half price only
 - ✅ Pagination support
-- ✅ Show discount amounts and percentages
-- ✅ Display promotional descriptions
+- ✅ Price and was-price per product
 
 ### 6. Category Browsing
-- ✅ Retrieve full category tree structure
-- ✅ Categories with special offers highlighted
+- ✅ Top-level categories and their subcategories
+- ✅ Top-level category NodeIds, which the specials tool takes (subcategory NodeIds are not specials listings)
 - ✅ URL-friendly category names
-- ✅ Hierarchical category navigation
 
 ### 7. Shopping Cart (Trolley) Management
 - ✅ Add items to cart (adds to any quantity already in the trolley)
@@ -155,10 +153,9 @@
 - Item count
 
 ### Category Information
-- Category hierarchy
+- Category hierarchy, two levels deep
 - URL-friendly names
 - Category IDs
-- Special offer indicators
 
 ### Search Results
 - Total result count
