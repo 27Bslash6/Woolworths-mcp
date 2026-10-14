@@ -58,7 +58,8 @@ echo    {
 echo      "mcpServers": {
 echo        "woolworths": {
 echo          "command": "node",
-echo          "args": ["%CD%\\dist\\index.js"]
+rem JSON needs every backslash doubled, so double the ones in %%CD%% too.
+echo          "args": ["%CD:\=\\%\\dist\\index.js"]
 echo        }
 echo      }
 echo    }

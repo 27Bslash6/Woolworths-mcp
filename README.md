@@ -139,11 +139,11 @@ Get the list of available product categories.
 
 ### 9. woolworths_add_to_cart
 
-Add a product to the shopping cart/trolley.
+Put a product in the shopping cart/trolley. This sets its quantity: if the product is already in the trolley, its quantity is replaced, not added to.
 
 **Parameters:**
 - `stockcode` (positive integer, required): The product stockcode/ID
-- `quantity` (integer, optional, 0 or more): Quantity to add (default: 1)
+- `quantity` (integer, optional, 1 or more): Quantity to put in the trolley (default: 1)
 
 **Example:**
 ```json

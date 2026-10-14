@@ -72,8 +72,13 @@ jobs:
         shell: pwsh
         run: |
           if ([IO.File]::ReadAllBytes("install.bat") -contains 13) { throw "install.bat contains a CR byte" }
-          cmd /c "install.bat < NUL"
-          if ($LASTEXITCODE -ne 0) { throw "install.bat exited $LASTEXITCODE" }
+          $out = cmd /c "install.bat < NUL 2>&1"
+          $code = $LASTEXITCODE
+          $out
+          if ($code -ne 0) { throw "install.bat exited $code" }
+          # The config snippet it prints must be valid JSON for this directory.
+          $expected = '"args": [' + (ConvertTo-Json "$PWD\dist\index.js") + ']'
+          if (-not ($out -join "`n").Contains($expected)) { throw "printed config does not contain $expected" }
 
       - name: install.bat reports a failed Step 1
         shell: pwsh

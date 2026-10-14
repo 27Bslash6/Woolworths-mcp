@@ -41,13 +41,15 @@ export function setSessionCookies(cookies: Cookie[]): void {
   sessionCookies = cookies;
 }
 
+// Forgets the browser before closing it, so a failed close cannot leave the server stuck on it.
 export async function closeBrowser(): Promise<void> {
   if (!browser) {
     return;
   }
-  await browser.close();
+  const closing = browser;
   browser = null;
   currentPage = null;
+  await closing.close();
 }
 
 // Helper function to get cookie header string
@@ -120,6 +122,13 @@ async function handleOpenBrowser({ headless }: { headless: boolean }) {
     throw new Error("Refusing to run Chromium with its sandbox disabled");
   }
   browser = launched;
+  // The user can close a headed window directly; forget that browser so it can be opened again.
+  launched.once("disconnected", () => {
+    if (browser === launched) {
+      browser = null;
+      currentPage = null;
+    }
+  });
 
   currentPage = await browser.newPage();
 
@@ -483,10 +492,11 @@ export function createServer(): McpServer {
   server.registerTool(
     "woolworths_add_to_cart",
     {
-      description: "Add a product to the shopping cart/trolley",
+      description:
+        "Put a product in the shopping cart/trolley. This sets its quantity: it replaces a quantity already in the trolley rather than adding to it.",
       inputSchema: {
         stockcode,
-        quantity: quantity.default(1).describe("Quantity to add"),
+        quantity: quantity.min(1).default(1).describe("Quantity to put in the trolley"),
       },
       annotations: { destructiveHint: true },
     },
