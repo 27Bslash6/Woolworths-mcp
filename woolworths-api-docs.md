@@ -229,70 +229,36 @@ GET /apis/ui/search-suggestions/suggestionsb2c?searchTerm=mil
 
 ## 🛒 3. Shopping Cart (Trolley) API
 
-### Add to Cart
+### Add, Update or Remove an Item
+
+One endpoint sets the trolley quantity of a product. A quantity of 0 removes it.
 
 #### Endpoint
 
 ```http
-POST /apis/ui/Trolley/AddItem
+POST /api/v3/ui/trolley/update
 ```
 
 **Request Body:**
 ```json
 {
-  "stockcode": 123456,
-  "quantity": 1
+  "items": [
+    {
+      "stockcode": 123456,
+      "quantity": 1,
+      "source": "ProductDetail",
+      "diagnostics": "0",
+      "searchTerm": null,
+      "evaluateRewardPoints": false,
+      "offerId": null,
+      "profileId": null,
+      "priceLevel": null
+    }
+  ]
 }
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "trolleyItemCount": 5,
-  "trolleyTotal": 45.50,
-  "item": {
-    "stockcode": 123456,
-    "quantity": 1,
-    "lineTotal": 4.50
-  }
-}
-```
-
----
-
-### Remove from Cart
-
-#### Endpoint
-
-```http
-POST /apis/ui/Trolley/RemoveItem
-```
-
-**Request Body:**
-```json
-{
-  "stockcode": 123456
-}
-```
-
----
-
-### Update Quantity
-
-#### Endpoint
-
-```http
-POST /apis/ui/Trolley/UpdateItem
-```
-
-**Request Body:**
-```json
-{
-  "stockcode": 123456,
-  "quantity": 3
-}
-```
+See [CART_API_UPDATE.md](CART_API_UPDATE.md) for the headers the endpoint expects.
 
 ---
 
@@ -457,18 +423,29 @@ async function searchProducts(searchTerm: string, page: number = 1) {
   return await response.json();
 }
 
-// Add item to cart
-async function addToCart(stockcode: number, quantity: number = 1) {
-  const response = await fetch('https://www.woolworths.com.au/apis/ui/Trolley/AddItem', {
+// Set the trolley quantity of a product (0 removes it)
+async function setTrolleyQuantity(stockcode: number, quantity: number = 1) {
+  const response = await fetch('https://www.woolworths.com.au/api/v3/ui/trolley/update', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Accept': 'application/json'
+      'Accept': '*/*'
     },
     credentials: 'include', // Important for session cookies
     body: JSON.stringify({
-      stockcode,
-      quantity
+      items: [
+        {
+          stockcode,
+          quantity,
+          source: 'ProductDetail',
+          diagnostics: '0',
+          searchTerm: null,
+          evaluateRewardPoints: false,
+          offerId: null,
+          profileId: null,
+          priceLevel: null
+        }
+      ]
     })
   });
   

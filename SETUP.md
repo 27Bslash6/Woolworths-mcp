@@ -17,7 +17,6 @@ pnpm run build
 This will install:
 - `@modelcontextprotocol/sdk` - MCP SDK for building the server
 - `puppeteer` - Browser automation for capturing session cookies
-- `node-fetch` - Making HTTP requests to Woolworths APIs
 - TypeScript and type definitions
 
 ### 2. Build the Project
@@ -46,7 +45,7 @@ This compiles the TypeScript code in `src/` to JavaScript in `dist/`.
   "mcpServers": {
     "woolworths": {
       "command": "node",
-      "args": ["C:\\Users\\eglass\\Projects\\Woolworths\\dist\\index.js"]
+      "args": ["/path/to/Woolworths-mcp/dist/index.js"]
     }
   }
 }
@@ -235,13 +234,12 @@ If you don't need to see the browser (e.g., cookies are already valid), use head
 
 ### Custom User Data Directory
 
-To persist browser data between sessions, modify the Puppeteer launch options in `src/index.ts`:
+To persist browser data between sessions, modify the Puppeteer launch options in `src/server.ts`:
 
 ```typescript
-browser = await puppeteer.launch({
-  headless,
+const launched = await puppeteer.launch({
+  // ...the existing options...
   userDataDir: './browser-data',
-  args: ['--no-sandbox', '--disable-setuid-sandbox']
 });
 ```
 

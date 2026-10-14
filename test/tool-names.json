@@ -1,0 +1,14 @@
+[
+  "woolworths_add_to_cart",
+  "woolworths_close_browser",
+  "woolworths_get_cart",
+  "woolworths_get_categories",
+  "woolworths_get_cookies",
+  "woolworths_get_product_details",
+  "woolworths_get_specials",
+  "woolworths_navigate",
+  "woolworths_open_browser",
+  "woolworths_remove_from_cart",
+  "woolworths_search_products",
+  "woolworths_update_cart_quantity"
+]

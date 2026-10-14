@@ -50,15 +50,17 @@ Add this to your Claude Desktop configuration file:
   "mcpServers": {
     "woolworths": {
       "command": "node",
-      "args": ["C:\\Users\\eglass\\Projects\\Woolworths\\dist\\index.js"]
+      "args": ["/path/to/Woolworths-mcp/dist/index.js"]
     }
   }
 }
 ```
 
-Make sure to update the path to match your installation directory.
+Make sure to update the path to match your installation directory. On Windows, write it with escaped backslashes, for example `"C:\\path\\to\\Woolworths-mcp\\dist\\index.js"`.
 
 ## Available Tools
+
+Every tool returns JSON text. When a call fails, the result has `isError: true` and the payload `{ "success": false, "error": "<reason>" }`.
 
 ### 1. woolworths_open_browser
 
@@ -98,9 +100,13 @@ Closes the browser instance while preserving the captured session cookies.
 Search for products on Woolworths.
 
 **Parameters:**
-- `searchTerm` (string, required): The product search term
+- `searchTerm` (string, required, non-empty): The product search term
 - `pageNumber` (integer, optional, 1 or more): Page number (default: 1)
 - `pageSize` (integer, optional, 1 to 36): Number of results to return (default: 36)
+- `sortType` (string, optional): Sort order, one of `TraderRelevance`, `PriceAsc`, `PriceDesc` or `Name` (default: `TraderRelevance`)
+- `isSpecial` (boolean, optional): Return only products on special (default: false)
+
+**Returns:** `totalResults`, `pagination` and `products`. Each product carries only these fields from the Woolworths response: `Stockcode`, `DisplayName`, `Brand`, `PackageSize`, `Price`, `WasPrice`, `IsOnSpecial`, `CupString`, `Unit` and `IsAvailable`. Pass `Stockcode` to the product detail and cart tools; `woolworths_get_product_details` returns everything else.
 
 **Example:**
 ```json
@@ -133,11 +139,11 @@ Get the list of available product categories.
 
 ### 9. woolworths_add_to_cart
 
-Add a product to the shopping cart/trolley.
+Put a product in the shopping cart/trolley. This sets its quantity: if the product is already in the trolley, its quantity is replaced, not added to.
 
 **Parameters:**
 - `stockcode` (positive integer, required): The product stockcode/ID
-- `quantity` (integer, optional, 0 or more): Quantity to add (default: 1)
+- `quantity` (integer, optional, 1 or more): Quantity to put in the trolley (default: 1)
 
 **Example:**
 ```json
@@ -220,7 +226,7 @@ Once cookies are captured, the server makes authenticated requests to Woolworths
 - Product Detail API: `/apis/ui/product/detail/{stockcode}`
 - Browse/Category API: `/apis/ui/browse/category`
 - Categories API: `/apis/ui/PiesCategoriesWithSpecials`
-- Shopping Cart API: `/apis/ui/Trolley/*` (AddItem, RemoveItem, UpdateItem, Get)
+- Shopping Cart API: `/apis/ui/Trolley` (GET, cart contents) and `/api/v3/ui/trolley/update` (POST; add, update, and remove with quantity 0)
 
 ### Session Management
 
@@ -241,6 +247,15 @@ pnpm run dev
 ```bash
 pnpm run build
 ```
+
+### Lint and tests
+
+```bash
+pnpm run lint   # Oxlint, type-aware
+pnpm test       # builds, then runs the offline tests in test/ with node:test
+```
+
+The tests stub `fetch` and never launch a browser. `test/fixtures/search-milk.json` is a recorded search response, cut to 8 results, with ad ids and tracking tokens removed.
 
 ## Requirements
 
@@ -293,7 +308,7 @@ Puppeteer only guarantees compatibility with the Chrome version it bundles, so a
 
 ## License
 
-MIT
+GPL-3.0. See [LICENSE](LICENSE).
 
 ## Disclaimer
 

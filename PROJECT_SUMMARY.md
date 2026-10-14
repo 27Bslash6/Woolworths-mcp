@@ -64,7 +64,10 @@ This is a fully functional Model Context Protocol (MCP) server that enables AI a
 ```
 Woolworths/
 ├── src/
-│   └── index.ts              # Main server implementation
+│   ├── index.ts              # Entry point: stdio transport
+│   ├── server.ts             # Tools and Woolworths API calls
+│   └── navigation.ts         # woolworths.com.au URL check
+├── test/                     # Offline tests and recorded fixtures
 ├── dist/                     # Compiled JavaScript (generated)
 ├── package.json              # Dependencies and scripts
 ├── tsconfig.json             # TypeScript configuration
@@ -94,10 +97,10 @@ Woolworths/
 ## Technology Stack
 
 - **Runtime**: Node.js 22 or 24
-- **Language**: TypeScript 5.5
-- **MCP SDK**: @modelcontextprotocol/sdk ^1.0.4
-- **Browser Automation**: Puppeteer ^23.0.0
-- **HTTP Client**: node-fetch ^3.3.2
+- **Language**: TypeScript 7
+- **MCP SDK**: @modelcontextprotocol/sdk 1.32
+- **Browser Automation**: Puppeteer 25
+- **HTTP Client**: Node's built-in `fetch`
 
 ## API Endpoints Used
 
@@ -184,7 +187,7 @@ For Claude Desktop (`claude_desktop_config.json`):
   "mcpServers": {
     "woolworths": {
       "command": "node",
-      "args": ["C:\\Users\\eglass\\Projects\\Woolworths\\dist\\index.js"]
+      "args": ["/path/to/Woolworths-mcp/dist/index.js"]
     }
   }
 }
@@ -247,14 +250,14 @@ Inspired by:
 
 ## License
 
-MIT
+GPL-3.0. See [LICENSE](LICENSE).
 
 ## Support
 
 For issues, questions, or contributions, refer to:
 - `README.md` for user documentation
 - `SETUP.md` for installation help
-- `src/index.ts` for implementation details
+- `src/server.ts` for implementation details
 
 ---
 
