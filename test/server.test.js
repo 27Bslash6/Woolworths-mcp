@@ -247,6 +247,24 @@ for (const { name, trolley, add, sent } of [
   });
 }
 
+test("add_to_cart writes to the session it read, even if the cookies change in between", async (t) => {
+  const cookies = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    cookies.push(init.headers.Cookie);
+    if (!url.endsWith("/apis/ui/Trolley")) {
+      return Response.json({ UpdatedItems: [] });
+    }
+    // A woolworths_get_cookies for another session lands while the trolley read is in flight.
+    setSessionCookies([{ name: "session", value: "other" }]);
+    return Response.json(withQuantity(50923, 3));
+  });
+
+  const { isError } = await call("woolworths_add_to_cart", { stockcode: 50923, quantity: 1 });
+
+  assert.equal(isError, false);
+  assert.deepEqual(cookies, ["session=test", "session=test"]);
+});
+
 test("add_to_cart never writes when the trolley read has no items array", async (t) => {
   const { AvailableItems: _, ...noItems } = trolleyFixture;
   const requests = stubTrolley(t, noItems);

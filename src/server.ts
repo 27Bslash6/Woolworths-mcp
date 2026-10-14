@@ -120,13 +120,13 @@ export function closeBrowser(): Promise<boolean> {
 }
 
 // Helper function to get cookie header string
-function getCookieHeader(): string {
-  return sessionCookies.map((c) => `${c.name}=${c.value}`).join("; ");
+function getCookieHeader(cookies: Cookie[]): string {
+  return cookies.map((c) => `${c.name}=${c.value}`).join("; ");
 }
 
-// GETs `url`, or POSTs `body` as JSON when one is given, with the captured session cookies.
-async function makeWoolworthsRequest<T>(url: string, body?: unknown): Promise<T> {
-  if (sessionCookies.length === 0) {
+// GETs `url`, or POSTs `body` as JSON when one is given, with `cookies` (by default the captured session's).
+async function makeWoolworthsRequest<T>(url: string, body?: unknown, cookies = sessionCookies): Promise<T> {
+  if (cookies.length === 0) {
     throw new Error(
       "No session cookies available. Please use woolworths_get_cookies first."
     );
@@ -143,7 +143,7 @@ async function makeWoolworthsRequest<T>(url: string, body?: unknown): Promise<T>
     "sec-fetch-mode": "cors",
     "sec-fetch-site": "same-origin",
     Priority: "u=1, i",
-    Cookie: getCookieHeader(),
+    Cookie: getCookieHeader(cookies),
   };
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
@@ -463,13 +463,10 @@ async function handleGetCategories() {
 const TROLLEY_URL = `https://www.woolworths.com.au/apis/ui/Trolley`;
 
 // Sets the trolley quantity of one product; quantity 0 removes it.
-async function handleUpdateTrolley({
-  stockcode,
-  quantity,
-}: {
-  stockcode: number;
-  quantity: number;
-}) {
+async function handleUpdateTrolley(
+  { stockcode, quantity }: { stockcode: number; quantity: number },
+  cookies = sessionCookies
+) {
   const url = `https://www.woolworths.com.au/api/v3/ui/trolley/update`;
 
   const data = await makeWoolworthsRequest<unknown>(url, {
@@ -486,7 +483,7 @@ async function handleUpdateTrolley({
         priceLevel: null,
       },
     ],
-  });
+  }, cookies);
   return {
     success: true,
     cart: data,
@@ -495,6 +492,8 @@ async function handleUpdateTrolley({
 
 // trolley/update sets a line's quantity, so an add reads the trolley and sets current + requested.
 // Only AvailableItems lines are counted: that is the trolley shape on record (test/fixtures/trolley.json).
+// Both requests send one snapshot of the cookies, so cookies captured between them cannot carry
+// this trolley's quantity into another session's trolley.
 async function handleAddToTrolley({
   stockcode,
   quantity,
@@ -502,7 +501,8 @@ async function handleAddToTrolley({
   stockcode: number;
   quantity: number;
 }) {
-  const trolley = await makeWoolworthsRequest<{ AvailableItems?: unknown }>(TROLLEY_URL);
+  const cookies = sessionCookies;
+  const trolley = await makeWoolworthsRequest<{ AvailableItems?: unknown }>(TROLLEY_URL, undefined, cookies);
   if (!Array.isArray(trolley.AvailableItems)) {
     throw new Error("Trolley read returned no AvailableItems array; nothing was added.");
   }
@@ -511,7 +511,7 @@ async function handleAddToTrolley({
   if (typeof current !== "number") {
     throw new Error(`Trolley line for ${stockcode} has no numeric Quantity; nothing was added.`);
   }
-  return handleUpdateTrolley({ stockcode, quantity: current + quantity });
+  return handleUpdateTrolley({ stockcode, quantity: current + quantity }, cookies);
 }
 
 async function handleGetCart() {
