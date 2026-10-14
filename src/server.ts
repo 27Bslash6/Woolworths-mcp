@@ -6,8 +6,36 @@ import { assertWoolworthsUrl } from "./navigation.js";
 
 // Cookie storage
 let sessionCookies: Cookie[] = [];
-let browser: Browser | null = null;
-let currentPage: Page | null = null;
+
+// One browser and its tab. Calls capture the session they start on and check it is still current
+// after each await, so a close or reopen mid-call can never hand them a newer session's page.
+interface Session {
+  browser: Browser;
+  page: Page;
+}
+let session: Session | null = null;
+
+// Launch and close run one at a time, chained here, so concurrent calls cannot orphan a browser.
+let lifecycle: Promise<unknown> = Promise.resolve();
+
+function serialise<T>(step: () => Promise<T>): Promise<T> {
+  const run = lifecycle.then(step, step);
+  lifecycle = run.catch(() => undefined);
+  return run;
+}
+
+function currentSession(): Session {
+  if (!session) {
+    throw new Error("Browser is not open. Use woolworths_open_browser first.");
+  }
+  return session;
+}
+
+function assertCurrent(started: Session): void {
+  if (session !== started) {
+    throw new Error("The browser was closed or reopened while this call ran.");
+  }
+}
 
 // Argument schemas. McpServer validates every call against these before a handler runs.
 const stockcode = z.number().int().positive().describe("The product stockcode/ID");
@@ -41,15 +69,18 @@ export function setSessionCookies(cookies: Cookie[]): void {
   sessionCookies = cookies;
 }
 
-// Forgets the browser before closing it, so a failed close cannot leave the server stuck on it.
-export async function closeBrowser(): Promise<void> {
-  if (!browser) {
-    return;
-  }
-  const closing = browser;
-  browser = null;
-  currentPage = null;
-  await closing.close();
+// Resolves false when no browser was open. Forgets the browser before closing it, so a failed
+// close cannot leave the server stuck on it.
+export function closeBrowser(): Promise<boolean> {
+  return serialise(async () => {
+    if (!session) {
+      return false;
+    }
+    const closing = session.browser;
+    session = null;
+    await closing.close();
+    return true;
+  });
 }
 
 // Helper function to get cookie header string
@@ -99,8 +130,10 @@ async function makeWoolworthsRequest<T>(url: string, body?: unknown): Promise<T>
 }
 
 // Tool handlers. A failure throws; toolResult turns it into an isError result.
-async function handleOpenBrowser({ headless }: { headless: boolean }) {
-  if (browser) {
+
+// Runs inside serialise: a browser that launched but cannot become the session is closed again.
+async function launchSession(headless: boolean): Promise<Session> {
+  if (session) {
     throw new Error("Browser is already open. Close it first with woolworths_close_browser.");
   }
 
@@ -116,44 +149,52 @@ async function handleOpenBrowser({ headless }: { headless: boolean }) {
     ignoreDefaultArgs: sandboxFlags,
     defaultViewport: { width: 1280, height: 800 },
   });
-  const spawnArgs = launched.process()?.spawnargs ?? [];
-  if (spawnArgs.some((arg) => sandboxFlags.includes(arg))) {
-    await launched.close();
-    throw new Error("Refusing to run Chromium with its sandbox disabled");
-  }
-  browser = launched;
-  // The user can close a headed window directly; forget that browser so it can be opened again.
-  launched.once("disconnected", () => {
-    if (browser === launched) {
-      browser = null;
-      currentPage = null;
+  try {
+    const spawnArgs = launched.process()?.spawnargs ?? [];
+    if (spawnArgs.some((arg) => sandboxFlags.includes(arg))) {
+      throw new Error("Refusing to run Chromium with its sandbox disabled");
     }
-  });
+    const page = await launched.newPage();
+    // Set user agent to appear more like a real browser
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    );
+    const opened = { browser: launched, page };
+    session = opened;
+    // The user can close a headed window directly; forget that browser so it can be opened again.
+    launched.once("disconnected", () => {
+      if (session === opened) {
+        session = null;
+      }
+    });
+    return opened;
+  } catch (error) {
+    await launched.close();
+    throw error;
+  }
+}
 
-  currentPage = await browser.newPage();
-
-  // Set user agent to appear more like a real browser
-  await currentPage.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-  );
+async function handleOpenBrowser({ headless }: { headless: boolean }) {
+  // The homepage load runs outside the lifecycle chain, so a close never waits on a slow page.
+  const opened = await serialise(() => launchSession(headless));
 
   // Navigate to Woolworths homepage
-  await currentPage.goto("https://www.woolworths.com.au", {
+  await opened.page.goto("https://www.woolworths.com.au", {
     waitUntil: "networkidle2",
   });
+  assertCurrent(opened);
 
   return {
     success: true,
     message:
       "Browser opened and navigated to Woolworths homepage. You can now log in manually if needed, then use woolworths_get_cookies to capture the session.",
-    url: currentPage.url(),
+    url: opened.page.url(),
   };
 }
 
 async function handleNavigate({ url }: { url: string }) {
-  if (!browser || !currentPage) {
-    throw new Error("Browser is not open. Use woolworths_open_browser first.");
-  }
+  const started = currentSession();
+  const { page } = started;
 
   // `url` comes from the model, which may be steered by page text it has read.
   const target = assertWoolworthsUrl(url);
@@ -161,18 +202,19 @@ async function handleNavigate({ url }: { url: string }) {
   // Navigate the validated href, so Node and Chromium never parse different input.
   let navigationError: unknown;
   try {
-    await currentPage.goto(target.href, { waitUntil: "networkidle2" });
+    await page.goto(target.href, { waitUntil: "networkidle2" });
   } catch (error) {
     navigationError = error;
   }
+  assertCurrent(started);
 
   // Redirects are followed, so the tab can still land off-domain; blank it rather than leave it there.
-  const finalUrl = currentPage.url();
+  const finalUrl = page.url();
   try {
     assertWoolworthsUrl(finalUrl);
   } catch (blocked) {
     const cause = navigationError instanceof Error ? `; ${navigationError.message}` : "";
-    const blanking = await currentPage.goto("about:blank").then(
+    const blanking = await page.goto("about:blank").then(
       () => "",
       (error) => `; blanking failed: ${error instanceof Error ? error.message : error}`
     );
@@ -182,26 +224,29 @@ async function handleNavigate({ url }: { url: string }) {
     throw navigationError;
   }
 
+  const title = await page.title();
+  assertCurrent(started);
   return {
     success: true,
     url: finalUrl,
-    title: await currentPage.title(),
+    title,
   };
 }
 
 async function handleGetCookies() {
-  if (!browser || !currentPage) {
-    throw new Error("Browser is not open. Use woolworths_open_browser first.");
-  }
+  const started = currentSession();
+  const { page } = started;
 
   // The tab can drift off-domain after woolworths_navigate returns (a slow redirect, in-page script).
   try {
-    assertWoolworthsUrl(currentPage.url());
+    assertWoolworthsUrl(page.url());
   } catch (blocked) {
     throw new Error(`Cookie capture refused (${(blocked as Error).message})`);
   }
 
-  const cookies = await currentPage.cookies();
+  const cookies = await page.cookies();
+  // A session closed or reopened meanwhile must not replace the cookies of the one now in use.
+  assertCurrent(started);
   setSessionCookies(cookies);
 
   return {
@@ -218,11 +263,9 @@ async function handleGetCookies() {
 }
 
 async function handleCloseBrowser() {
-  if (!browser) {
+  if (!(await closeBrowser())) {
     throw new Error("Browser is not open.");
   }
-
-  await closeBrowser();
 
   return {
     success: true,
