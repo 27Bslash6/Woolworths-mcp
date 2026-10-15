@@ -1,11 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import puppeteer, { Browser, Cookie, Page } from "puppeteer";
+import puppeteer, { Browser, Page } from "puppeteer";
 import { z } from "zod";
 import { assertWoolworthsUrl } from "./navigation.js";
-
-// Cookie storage
-let sessionCookies: Cookie[] = [];
 
 // One browser and its tab. Calls capture the session they start on and check it is still current
 // after each await, so a close or reopen mid-call can never hand them a newer session's page.
@@ -101,10 +98,6 @@ function requireArray<T>(value: T[] | undefined, field: string): T[] {
   return value;
 }
 
-export function setSessionCookies(cookies: Cookie[]): void {
-  sessionCookies = cookies;
-}
-
 // Resolves false when no browser was open. Forgets the session before closing it, so a failed
 // close cannot leave the server stuck on it; a browser that stays running is kept in `unclosed`.
 export function closeBrowser(): Promise<boolean> {
@@ -119,50 +112,78 @@ export function closeBrowser(): Promise<boolean> {
   });
 }
 
-// Helper function to get cookie header string
-function getCookieHeader(cookies: Cookie[]): string {
-  return cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+// Every API call is sent from this origin only, so the request carries the tab's own cookies.
+const WOOLWORTHS_ORIGIN = "https://www.woolworths.com.au";
+
+interface TabResponse {
+  sent: boolean;
+  ok: boolean;
+  status: number;
+  statusText: string;
+  contentType: string;
+  size: number;
+  text?: string;
 }
 
-// GETs `url`, or POSTs `body` as JSON when one is given, with `cookies` (by default the captured session's).
-async function makeWoolworthsRequest<T>(url: string, body?: unknown, cookies = sessionCookies): Promise<T> {
-  if (cookies.length === 0) {
-    throw new Error(
-      "No session cookies available. Please use woolworths_get_cookies first."
-    );
+// Runs inside the tab (page.evaluate serialises it, so it may use only its argument). The origin test
+// and the fetch share one synchronous step: script cannot move the tab between them, and an off-origin
+// document sends nothing. `location` is unforgeable, so another origin's script cannot fake the test.
+// The browser supplies the user agent, cookies and fetch metadata, and keeps any Set-Cookie it gets.
+// A failed response's body never leaves the tab: only its size does.
+async function fetchInTab(request: { origin: string; url: string; body?: string }) {
+  if (location.origin !== request.origin) {
+    return { sent: false, ok: false, status: 0, statusText: "", contentType: "", size: 0 };
   }
-
-  const headers: Record<string, string> = {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    Accept: "*/*",
-    "Accept-Language": "en-US,en;q=0.9",
-    Origin: "https://www.woolworths.com.au",
-    Referer: "https://www.woolworths.com.au/",
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-origin",
-    Priority: "u=1, i",
-    Cookie: getCookieHeader(cookies),
+  const response = await fetch(request.url, {
+    method: request.body === undefined ? "GET" : "POST",
+    headers: request.body === undefined ? {} : { "Content-Type": "application/json" },
+    body: request.body,
+  });
+  const bytes = await response.arrayBuffer();
+  return {
+    sent: true,
+    ok: response.ok,
+    status: response.status,
+    statusText: response.statusText,
+    contentType: response.headers.get("content-type") ?? "",
+    size: bytes.byteLength,
+    text: response.ok ? new TextDecoder().decode(bytes) : undefined,
   };
-  if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
-  }
+}
 
-  const response = await fetch(url, {
-    method: body === undefined ? "GET" : "POST",
-    headers,
+// Status, status text, media type and size: enough to tell a block page from an outage, with no body.
+function describeResponse({ status, statusText, contentType, size }: TabResponse): string {
+  const mediaType = contentType.split(";")[0].trim().slice(0, 60) || "no content type";
+  // HTTP/2 responses carry no status text.
+  const line = statusText ? `${status} ${statusText.slice(0, 60)}` : String(status);
+  return `${line} (${mediaType}, ${size} bytes)`.replace(/[<>]/g, "");
+}
+
+// GETs `url`, or POSTs `body` as JSON when one is given, from the tab of session `started` (by
+// default the current one). Fails, rather than return a result, if that session is replaced.
+async function makeWoolworthsRequest<T>(url: string, body?: unknown, started = currentSession()): Promise<T> {
+  assertCurrent(started);
+  const response: TabResponse = await started.page.evaluate(fetchInTab, {
+    origin: WOOLWORTHS_ORIGIN,
+    url,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  assertCurrent(started);
 
-  if (!response.ok) {
-    const errorText = await response.text();
+  if (!response.sent) {
     throw new Error(
-      `API request failed: ${response.status} ${response.statusText}. ${errorText}`
+      `The browser tab is not on ${WOOLWORTHS_ORIGIN}, so nothing was sent. Use woolworths_navigate to return to it.`
     );
   }
-
-  return (await response.json()) as T;
+  if (!response.ok) {
+    throw new Error(`API request failed: ${describeResponse(response)}`);
+  }
+  try {
+    return JSON.parse(response.text ?? "") as T;
+  } catch {
+    // The parser's message quotes the body, so it is dropped.
+    throw new Error(`API response was not JSON: ${describeResponse(response)}`);
+  }
 }
 
 // Tool handlers. A failure throws; toolResult turns it into an isError result.
@@ -197,11 +218,8 @@ async function launchSession(headless: boolean): Promise<Session> {
     if (spawnArgs.some((arg) => sandboxFlags.includes(arg))) {
       throw new Error("Refusing to run Chromium with its sandbox disabled");
     }
+    // No user agent override: the browser's own must match its TLS handshake and client hints.
     const page = await launched.newPage();
-    // Set user agent to appear more like a real browser
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    );
     const opened = { browser: launched, page };
     session = opened;
     // The user can close a headed window directly; forget that browser so it can be opened again.
@@ -231,7 +249,7 @@ async function handleOpenBrowser({ headless }: { headless: boolean }) {
   return {
     success: true,
     message:
-      "Browser opened and navigated to Woolworths homepage. You can now log in manually if needed, then use woolworths_get_cookies to capture the session.",
+      "Browser opened and navigated to Woolworths homepage. Log in manually if needed. Keep the browser open: every API tool sends its request from this tab.",
     url: opened.page.url(),
   };
 }
@@ -285,17 +303,16 @@ async function handleGetCookies() {
   try {
     assertWoolworthsUrl(page.url());
   } catch (blocked) {
-    throw new Error(`Cookie capture refused (${(blocked as Error).message})`);
+    throw new Error(`Cookie listing refused (${(blocked as Error).message})`);
   }
 
   const cookies = await page.cookies();
-  // A session closed or reopened meanwhile must not replace the cookies of the one now in use.
+  // A session closed or reopened meanwhile must not report a newer session's cookies as this one's.
   assertCurrent(started);
-  setSessionCookies(cookies);
 
   return {
     success: true,
-    message: `Captured ${cookies.length} cookies from the current session.`,
+    message: `The current session holds ${cookies.length} cookies. API tools use them directly from the browser.`,
     cookies: cookies.map((c) => ({
       name: c.name,
       domain: c.domain,
@@ -313,7 +330,7 @@ async function handleCloseBrowser() {
 
   return {
     success: true,
-    message: "Browser closed. Session cookies have been preserved.",
+    message: "Browser closed. API tools need an open browser: use woolworths_open_browser to start a new session.",
   };
 }
 
@@ -465,7 +482,7 @@ const TROLLEY_URL = `https://www.woolworths.com.au/apis/ui/Trolley`;
 // Sets the trolley quantity of one product; quantity 0 removes it.
 async function handleUpdateTrolley(
   { stockcode, quantity }: { stockcode: number; quantity: number },
-  cookies = sessionCookies
+  started = currentSession()
 ) {
   const url = `https://www.woolworths.com.au/api/v3/ui/trolley/update`;
 
@@ -483,7 +500,7 @@ async function handleUpdateTrolley(
         priceLevel: null,
       },
     ],
-  }, cookies);
+  }, started);
   return {
     success: true,
     cart: data,
@@ -492,8 +509,8 @@ async function handleUpdateTrolley(
 
 // trolley/update sets a line's quantity, so an add reads the trolley and sets current + requested.
 // Only AvailableItems lines are counted: that is the trolley shape on record (test/fixtures/trolley.json).
-// Both requests send one snapshot of the cookies, so cookies captured between them cannot carry
-// this trolley's quantity into another session's trolley.
+// Both requests are bound to the session the call started on, so a browser reopened between them
+// fails the call before the update, rather than carry this trolley's quantity into another trolley.
 async function handleAddToTrolley({
   stockcode,
   quantity,
@@ -501,8 +518,8 @@ async function handleAddToTrolley({
   stockcode: number;
   quantity: number;
 }) {
-  const cookies = sessionCookies;
-  const trolley = await makeWoolworthsRequest<{ AvailableItems?: unknown }>(TROLLEY_URL, undefined, cookies);
+  const started = currentSession();
+  const trolley = await makeWoolworthsRequest<{ AvailableItems?: unknown }>(TROLLEY_URL, undefined, started);
   if (!Array.isArray(trolley.AvailableItems)) {
     throw new Error("Trolley read returned no AvailableItems array; nothing was added.");
   }
@@ -511,7 +528,7 @@ async function handleAddToTrolley({
   if (typeof current !== "number") {
     throw new Error(`Trolley line for ${stockcode} has no numeric Quantity; nothing was added.`);
   }
-  return handleUpdateTrolley({ stockcode, quantity: current + quantity }, cookies);
+  return handleUpdateTrolley({ stockcode, quantity: current + quantity }, started);
 }
 
 async function handleGetCart() {
@@ -550,7 +567,7 @@ export function createServer(): McpServer {
     "woolworths_open_browser",
     {
       description:
-        "Opens a browser and navigates to Woolworths website. This is the first step to establish a session.",
+        "Opens a browser and navigates to Woolworths website. This is the first step: every other tool sends its requests from this browser, so keep it open.",
       inputSchema: {
         headless: z
           .boolean()
@@ -577,9 +594,8 @@ export function createServer(): McpServer {
     "woolworths_get_cookies",
     {
       description:
-        "Retrieves session cookies from the current browser session. Run this after logging in or establishing a session.",
-      // Not read-only: the captured cookies replace the session every later call sends.
-      annotations: { readOnlyHint: false, destructiveHint: true },
+        "Lists the names and attributes (not the values) of the current browser session's cookies. Optional: API tools use the browser's cookies directly.",
+      annotations: { readOnlyHint: true },
     },
     () => toolResult(handleGetCookies)
   );
@@ -594,7 +610,7 @@ export function createServer(): McpServer {
     "woolworths_search_products",
     {
       description:
-        "Search for products on Woolworths. Requires session cookies to be obtained first.",
+        "Search for products on Woolworths. Requires an open browser (woolworths_open_browser).",
       inputSchema: {
         searchTerm: z.string().min(1).describe("The product search term"),
         pageNumber: pageNumber.default(1).describe("Page number for pagination"),

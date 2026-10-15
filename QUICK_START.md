@@ -35,7 +35,7 @@ chmod +x install.sh && ./install.sh
 
 ## First Use (2 minutes)
 
-### Step 1: Get Session Cookies
+### Step 1: Open the Browser
 
 Say to Claude:
 
@@ -45,29 +45,13 @@ A Chrome window will open showing woolworths.com.au
 
 ### Step 2: Log In (Optional)
 
-If you want to access your account or shopping cart:
+If you want your account's trolley:
 - Log in manually in the browser window
-- Otherwise, skip this step for browsing only
+- Otherwise, skip this step: browsing and an anonymous trolley work without logging in
 
-### Step 3: Capture Cookies
+### Step 3: Start Shopping! 🛒
 
-Say to Claude:
-
-> "Get the Woolworths cookies"
-
-Claude will capture your session and confirm.
-
-### Step 4: Close Browser
-
-Say to Claude:
-
-> "Close the browser"
-
-The browser closes but cookies remain active.
-
-### Step 5: Start Shopping! 🛒
-
-Now you can:
+Keep the browser open: every request is sent from its tab. Now you can:
 
 > "Search for milk"
 
@@ -78,6 +62,14 @@ Now you can:
 > "Add product 123456 to my cart"
 
 > "Show me my cart"
+
+### Step 4: Close Browser
+
+When you are done, say to Claude:
+
+> "Close the browser"
+
+Shopping commands stop working until you open the browser again.
 
 ## Common Commands
 
@@ -93,9 +85,10 @@ Now you can:
 
 ## Tips
 
-- 💡 You need to get cookies before using API features
-- 🔄 If you get a 403 error, your cookies expired - recapture them
-- 🛍️ Shopping cart features require you to be logged in
+- 💡 Keep the browser open while you shop: closing it stops every shopping command
+- 🔄 If you get a 403 error, your session expired - close and reopen the browser
+- 🛍️ Log in if you want your account's trolley; otherwise the cart is an anonymous trolley kept by the browser
+- 🖥️ Leave the browser headed (the default): the site may refuse headless Chrome
 - 📦 Note the stockcode from search results to add items to cart
 
 ## Full Documentation
@@ -109,9 +102,9 @@ Now you can:
 
 **"Browser is not open"** → Run `woolworths_open_browser` first
 
-**"No session cookies"** → Capture cookies with `woolworths_get_cookies`
+**"The browser tab is not on https://www.woolworths.com.au"** → Navigate back to a www.woolworths.com.au page with `woolworths_navigate`
 
-**"API request failed: 403"** → Cookies expired, recapture them
+**"API request failed: 403"** → Session expired or refused: close and reopen the browser (headed), and log in again if needed
 
 **Server won't start** → Check you've run `pnpm run build`
 

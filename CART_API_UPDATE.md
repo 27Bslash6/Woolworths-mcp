@@ -45,9 +45,8 @@ Added additional headers to match the current Woolworths API requirements:
 
 ## Testing
 After restarting Cursor/Claude Desktop, the cart functionality should work correctly. You can test by:
-1. Opening the browser with `woolworths_open_browser`
-2. Getting cookies with `woolworths_get_cookies`
-3. Adding items to cart with `woolworths_add_to_cart`
+1. Opening the browser with `woolworths_open_browser` (keep it open)
+2. Adding items to cart with `woolworths_add_to_cart`
 
 ## Next Steps
 To apply these changes:

@@ -53,28 +53,28 @@ pnpm run build
 - Browser navigates to fruit & veg category
 - Response includes current URL and page title
 
-#### Test 2.3: Capture Cookies
-**Command to Claude**: "Get the Woolworths cookies"
+#### Test 2.3: List Cookies (Optional)
+**Command to Claude**: "List the Woolworths cookies"
 
 **Expected**:
 - Response shows cookie count (typically 10-20 cookies)
-- Cookie names include: `w-rctx`, `wow-auth-token`, etc.
+- Each cookie shows only `name`, `domain`, `path`, `secure` and `httpOnly`; no values
 - Response format:
   ```json
   {
     "success": true,
-    "message": "Captured X cookies...",
+    "message": "The current session holds X cookies. API tools use them directly from the browser.",
     "cookies": [...]
   }
   ```
+- No API tool needs this step to have run
 
 #### Test 2.4: Close Browser
 **Command to Claude**: "Close the browser"
 
 **Expected**:
 - Browser window closes
-- Response confirms closure
-- Cookies preserved message
+- Response confirms closure and says API tools need an open browser
 
 #### Test 2.5: Prevent Double Browser Open
 **Steps**:
@@ -181,15 +181,13 @@ pnpm run build
 
 ### 7. Shopping Cart Tests
 
-**⚠️ Important**: Cart operations require authentication (logged in session)
+**⚠️ Important**: Keep the browser open for every cart test. Log in to test your account's trolley; without logging in, the cart is an anonymous trolley
 
 #### Test 7.1: Add Item to Cart
 **Steps**:
 1. Log in to Woolworths in the browser
-2. Capture cookies
-3. Close browser
-4. Search for a product and note its stockcode
-5. **Command**: "Add stockcode 123456 to my cart, quantity 2"
+2. Search for a product and note its stockcode
+3. **Command**: "Add stockcode 123456 to my cart, quantity 2"
 
 **Expected**:
 - Success response
@@ -226,26 +224,27 @@ pnpm run build
 #### Test 7.5: Cart Operations Without Login
 **Steps**:
 1. Don't log in (skip login step)
-2. Try to add to cart
+2. Add an item to cart
+3. View cart
 
-**Expected**: May return error or empty cart (depends on Woolworths API)
+**Expected**: The item is in the anonymous trolley: the browser keeps the cookies the first response sets, so the trolley persists between calls
 
 ### 8. Error Handling Tests
 
-#### Test 8.1: API Call Without Cookies
+#### Test 8.1: API Call Without a Browser
 **Steps**:
-1. Restart server (loses cookies)
+1. Close the browser (or restart the server)
 2. Try to search without opening browser first
 
-**Expected**: Error: "No session cookies available"
+**Expected**: Error: "Browser is not open. Use woolworths_open_browser first." Nothing is sent
 
-#### Test 8.2: Expired Cookies
+#### Test 8.2: Expired Session
 **Steps**:
-1. Get cookies
+1. Open browser
 2. Wait 2+ hours
 3. Try to search
 
-**Expected**: HTTP 401/403 error indicating expired session
+**Expected**: HTTP 401/403 error indicating expired session, reported as status, status text, content type and size in bytes, with no response body
 
 #### Test 8.3: Invalid Tool Name
 **Command**: Use MCP client to call non-existent tool
@@ -257,18 +256,25 @@ pnpm run build
 
 **Expected**: Parameter validation error
 
+#### Test 8.5: API Call From Another Origin
+**Steps**:
+1. Open browser
+2. Navigate to a woolworths.com.au subdomain (any page not on `https://www.woolworths.com.au`)
+3. Try to search
+
+**Expected**: Error saying the tab is not on https://www.woolworths.com.au and nothing was sent. Navigating back to a www.woolworths.com.au page fixes it
+
 ### 9. Session Management Tests
 
-#### Test 9.1: Cookie Persistence Across API Calls
+#### Test 9.1: Session Persistence Across API Calls
 **Steps**:
-1. Get cookies
-2. Close browser
-3. Search for product A
-4. Search for product B
-5. Get specials
-6. Get categories
+1. Open browser and keep it open
+2. Search for product A
+3. Search for product B
+4. Get specials
+5. Get categories
 
-**Expected**: All calls succeed using same cookies
+**Expected**: All calls succeed from the same browser tab
 
 #### Test 9.2: Multiple Browser Sessions
 **Steps**:
@@ -284,14 +290,13 @@ pnpm run build
 **Complete workflow**:
 1. Open browser → ✅
 2. Log in manually → ✅
-3. Capture cookies → ✅
-4. Close browser → ✅
-5. Search for "coffee" → ✅
-6. Get details of first result → ✅
-7. Add to cart → ✅
-8. View cart → ✅
-9. Update quantity → ✅
-10. Remove item → ✅
+3. Search for "coffee" → ✅
+4. Get details of first result → ✅
+5. Add to cart → ✅
+6. View cart → ✅
+7. Update quantity → ✅
+8. Remove item → ✅
+9. Close browser → ✅
 
 **Expected**: All steps complete without errors
 
@@ -309,7 +314,7 @@ pnpm run build
 ### Test P.1: Response Time
 **Measure**:
 - Browser open: Should complete in < 5 seconds
-- Cookie capture: Should complete in < 1 second
+- Cookie listing: Should complete in < 1 second
 - Product search: Should complete in < 3 seconds
 - Product details: Should complete in < 2 seconds
 
@@ -326,9 +331,9 @@ pnpm run build
 ## Security Tests
 
 ### Test S.1: Cookie Inspection
-**Check**: Cookies not logged to console or files
+**Check**: Cookie values not logged to console or files, or returned by any tool
 
-**Expected**: Cookies only in memory, not visible in logs
+**Expected**: Cookies stay in the browser. `woolworths_get_cookies` lists names and attributes only, and a failed API response is reported without its body
 
 ### Test S.2: HTTPS Verification
 **Check**: All API calls use HTTPS
@@ -359,19 +364,20 @@ pnpm run build
 After any code changes, run this minimal regression suite:
 
 1. ✅ Open browser
-2. ✅ Capture cookies
-3. ✅ Close browser
-4. ✅ Search products
-5. ✅ Get product details
-6. ✅ Get specials
-7. ✅ Get categories
+2. ✅ Search products
+3. ✅ Get product details
+4. ✅ Get specials
+5. ✅ Get categories
+6. ✅ Close browser
 
 ## Known Issues & Limitations
 
 | Issue | Impact | Workaround |
 |-------|--------|------------|
-| Cookies expire after ~1 hour | Must recapture | Re-open browser and capture cookies |
-| Some features need login | Cart requires auth | Log in before capturing cookies |
+| Session expires after ~1 hour | API calls fail with 401/403 | Close and re-open the browser, and log in again if needed |
+| API tools need the browser open | Closing it stops every API call | Keep the browser open while using API tools |
+| Headless Chrome reports `HeadlessChrome` | Site may refuse requests | Use headed mode (the default) |
+| Account trolley needs login | Anonymous trolley otherwise | Log in in the browser window |
 | API rate limiting | May throttle requests | Add delays between bulk operations |
 | Woolworths API changes | Server may break | Update endpoints as needed |
 
@@ -397,19 +403,15 @@ _______________________________________
 _______________________________________
 ```
 
-## Automated Testing (Future)
+## Automated Testing
 
-To add automated tests in the future, consider:
+The offline tests build the server, then run the tests in `test/` with node:test:
 
-- **Unit Tests**: Test individual functions
-- **Integration Tests**: Test tool workflows
-- **Mock API**: Mock Woolworths responses
-- **CI/CD**: Automated testing on commits
-
-Example test framework setup:
 ```bash
-npm install --save-dev jest @types/jest ts-jest
+pnpm test
 ```
+
+They stub `puppeteer.launch` with fake browsers (`test/fake-browser.js`). The fake tab runs the server's real in-page request function in Node with `globalThis.fetch` stubbed, so no network or browser is needed.
 
 ## Debugging Tips
 
@@ -420,7 +422,7 @@ Modify `src/server.ts` to add console.error statements
 Use Chrome DevTools Network tab while browser is open
 
 ### Check Cookie Contents
-Add temporary logging to see cookie values (remove in production)
+Use the Chrome DevTools Application tab while the browser is open
 
 ### MCP Client Logs
 Check Claude Desktop logs for MCP communication issues
@@ -436,7 +438,7 @@ Check Claude Desktop logs for MCP communication issues
 - [ ] Specials (2 tests)
 - [ ] Categories (1 test)
 - [ ] Shopping Cart (5 tests)
-- [ ] Error Handling (4 tests)
+- [ ] Error Handling (5 tests)
 - [ ] Session Management (2 tests)
 - [ ] Integration (2 tests)
 - [ ] Performance (3 tests)

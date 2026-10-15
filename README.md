@@ -8,8 +8,8 @@ A Model Context Protocol (MCP) server for interacting with Woolworths Australia'
 
 ## Features
 
-- **Browser Automation**: Uses Puppeteer to open a browser, navigate to Woolworths, and capture session cookies
-- **Session Management**: Maintains session cookies for authenticated API requests
+- **Browser Automation**: Uses Puppeteer to open a browser and navigate to Woolworths, where you can log in manually
+- **Session Management**: Sends every API request from the open browser tab, with the browser's own cookies and headers
 - **Product Search**: Search for products across the Woolworths catalog with filtering and sorting
 - **Product Details**: Get detailed information about specific products
 - **Specials & Deals**: Browse current specials and promotional offers
@@ -62,12 +62,14 @@ Make sure to update the path to match your installation directory. On Windows, w
 
 Every tool returns JSON text. When a call fails, the result has `isError: true` and the payload `{ "success": false, "error": "<reason>" }`.
 
+The API tools (5 to 12) send their requests from the browser tab that `woolworths_open_browser` opens, so they need it open. With the browser closed, each returns an error telling you to open it, and sends nothing.
+
 ### 1. woolworths_open_browser
 
-Opens a browser and navigates to the Woolworths website. This is typically the first step to establish a session.
+Opens a browser and navigates to the Woolworths website. This is the first step: every API tool sends its request from this browser tab, so keep it open while you use them.
 
 **Parameters:**
-- `headless` (boolean, optional): Whether to run in headless mode (default: false)
+- `headless` (boolean, optional): Whether to run in headless mode (default: false). Headed is recommended: in headless mode Chrome reports `HeadlessChrome` in its user agent, and the site may refuse it.
 
 **Example:**
 ```json
@@ -80,18 +82,20 @@ Opens a browser and navigates to the Woolworths website. This is typically the f
 
 Navigate to a specific URL on the Woolworths website. Only `https:` URLs whose host is `woolworths.com.au` or one of its subdomains are accepted; anything else is refused with an error naming the reason. If a redirect lands the page off woolworths.com.au, the tab is cleared to `about:blank` and the tool returns an error naming the final URL.
 
+The API tools only run while the tab is on `https://www.woolworths.com.au`. After visiting a subdomain, navigate back to a www.woolworths.com.au page before using them.
+
 **Parameters:**
 - `url` (string, required): The https URL on woolworths.com.au to navigate to
 
 ### 3. woolworths_get_cookies
 
-Retrieves and stores session cookies from the current browser session. Run this after logging in or when you have an active session. It refuses to capture if the tab is no longer on an https woolworths.com.au page.
+Lists the names and attributes (`domain`, `path`, `secure`, `httpOnly`) of the current browser session's cookies, never their values. It is optional and informational: no API tool needs it to have run. It refuses if the tab is no longer on an https woolworths.com.au page.
 
 **Parameters:** None
 
 ### 4. woolworths_close_browser
 
-Closes the browser instance while preserving the captured session cookies.
+Closes the browser instance. API tools fail until you open the browser again with `woolworths_open_browser`.
 
 **Parameters:** None
 
@@ -191,10 +195,9 @@ Set the quantity of a product in the shopping cart/trolley. It replaces any quan
 ## Typical Workflow
 
 1. **Open Browser**: Use `woolworths_open_browser` to launch a browser window
-2. **Log In** (if needed): The browser will open in non-headless mode by default, allowing you to manually log in to your Woolworths account if required
-3. **Capture Cookies**: Use `woolworths_get_cookies` to capture session cookies
-4. **Close Browser**: Use `woolworths_close_browser` to close the browser (cookies are preserved)
-5. **Use API Tools**: Now you can use any of the API tools (search, get product details, etc.)
+2. **Log In** (if needed): The browser will open in non-headless mode by default, allowing you to manually log in to your Woolworths account if you want your account's trolley
+3. **Use API Tools**: Use any of the API tools (search, get product details, cart, etc.). Keep the browser open: each request is sent from its tab
+4. **Close Browser**: Use `woolworths_close_browser` when you are done. API tools fail until the browser is reopened
 
 ## Example Usage Scenario
 
@@ -204,23 +207,20 @@ Set the quantity of a product in the shopping cart/trolley. It replaces any quan
    
 2. User manually logs in on the opened browser (if needed)
 
-3. User: "Get the session cookies"
-   → Calls: woolworths_get_cookies
-   
-4. User: "Close the browser"
-   → Calls: woolworths_close_browser
-   
-5. User: "Search for bananas"
+3. User: "Search for bananas"
    → Calls: woolworths_search_products with searchTerm="bananas"
    
-6. User: "What's half price this week?"
+4. User: "What's half price this week?"
    → Calls: woolworths_get_specials with halfPrice=true
 
-7. User: "Add product 123456 to my cart"
+5. User: "Add product 123456 to my cart"
    → Calls: woolworths_add_to_cart with stockcode=123456
 
-8. User: "Show me my cart"
+6. User: "Show me my cart"
    → Calls: woolworths_get_cart
+
+7. User: "Close the browser"
+   → Calls: woolworths_close_browser
 ```
 
 ## Technical Details
@@ -230,12 +230,11 @@ Set the quantity of a product in the shopping cart/trolley. It replaces any quan
 The server uses Puppeteer to:
 - Launch a Chromium browser instance
 - Navigate to Woolworths website
-- Capture cookies from the browser session
-- Maintain user agent and browser fingerprint
+- Send each API request with `fetch` from inside the open tab
 
 ### API Integration
 
-Once cookies are captured, the server makes authenticated requests to Woolworths' internal APIs:
+Each API tool sends its request from the open browser tab, so the browser supplies its own user agent, cookies and fetch headers. The server sets no user agent of its own. Requests go to Woolworths' internal APIs:
 - Search API: `/apis/ui/Search/products` (POST)
 - Product Detail API: `/apis/ui/product/detail/{stockcode}` (GET)
 - Specials Browse API: `/apis/ui/browse/category` (POST; `categoryId` selects the specials listing)
@@ -244,7 +243,9 @@ Once cookies are captured, the server makes authenticated requests to Woolworths
 
 ### Session Management
 
-Session cookies are stored in memory for the duration of the server process. If the server restarts, you'll need to recapture cookies by opening the browser again.
+The session lives in the browser. The server keeps no cookies of its own: API requests use the tab's cookies, and the browser keeps any cookies a response sets, so an anonymous trolley persists between calls. Closing the browser, or restarting the server, ends the session; open the browser again (and log in again if needed) to start a new one.
+
+API calls run only while the tab is on exactly `https://www.woolworths.com.au`. If it is on any other origin (another site, a subdomain, or http), the call fails with an error saying so and nothing is sent; use `woolworths_navigate` to return to a www.woolworths.com.au page. A failed response (not 2xx, or a 200 that is not JSON) is reported as its status, status text, content type and size in bytes, never its body.
 
 ## Development
 
@@ -269,7 +270,7 @@ pnpm run lint   # Oxlint, type-aware
 pnpm test       # builds, then runs the offline tests in test/ with node:test
 ```
 
-The tests stub `fetch` and `puppeteer.launch`, so they never reach the network or start a browser. `test/fixtures/` holds one recorded response per endpoint the read tools call (search, specials, product detail, categories), cut to a few results, with ad ids and tracking tokens removed.
+The tests stub `puppeteer.launch` with fake browsers (`test/fake-browser.js`). The fake tab runs the server's real in-page request function in Node with `globalThis.fetch` stubbed, so the tests never reach the network or start a browser. `test/fixtures/` holds one recorded response per endpoint the read tools call (search, specials, product detail, categories), cut to a few results, with ad ids and tracking tokens removed.
 
 ## Requirements
 
@@ -280,7 +281,7 @@ The tests stub `fetch` and `puppeteer.launch`, so they never reach the network o
 ## Notes
 
 - The browser opens in non-headless mode by default to allow for manual login
-- Session cookies are stored in memory and persist until the server is restarted
+- API tools need the browser open; the session's cookies live in the browser, not the server
 - API endpoints are based on Woolworths' public web interface and may change
 - Always respect Woolworths' Terms of Service when using this tool
 
@@ -288,7 +289,7 @@ The tests stub `fetch` and `puppeteer.launch`, so they never reach the network o
 
 ### Browser won't open
 - Check that Puppeteer installed correctly
-- Try running with headless: true if display issues occur
+- Try running with headless: true if display issues occur (the site may refuse headless Chrome)
 
 ### `No usable sandbox!` on Linux
 Chromium always runs with its sandbox enabled; Puppeteer's `PUPPETEER_DANGEROUS_NO_SANDBOX` is ignored, and a launch that ends up with the sandbox disabled is refused. Linux distributions that restrict unprivileged user namespaces (Ubuntu 23.10 and later, via AppArmor) only grant them to specific browser binaries by path, such as the installed Google Chrome at `/opt/google/chrome/chrome`. The Chrome for Testing build that Puppeteer downloads is not covered, so it aborts at launch with `FATAL ... No usable sandbox!`.
@@ -312,8 +313,10 @@ Install Google Chrome and point Puppeteer at it with `PUPPETEER_EXECUTABLE_PATH`
 Puppeteer only guarantees compatibility with the Chrome version it bundles, so a much newer system Chrome may need a Puppeteer upgrade.
 
 ### API requests fail
-- Ensure you've captured cookies with `woolworths_get_cookies`
-- Check that the session hasn't expired (you may need to re-open browser and capture new cookies)
+- Ensure the browser is open (`woolworths_open_browser`); with it closed, every API tool returns an error and sends nothing
+- If the error says the tab is not on https://www.woolworths.com.au, use `woolworths_navigate` to return to a www.woolworths.com.au page
+- If the session has expired, close and reopen the browser, and log in again if needed
+- If you run headless, try headed mode: the site may refuse `HeadlessChrome`
 - Verify the API endpoints are still valid
 
 ### Connection issues

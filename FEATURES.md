@@ -5,16 +5,17 @@
 ### 1. Browser Automation
 - ✅ Launch Chrome browser with Puppeteer
 - ✅ Navigate to Woolworths website
-- ✅ Manual login support (non-headless mode)
-- ✅ Session cookie capture
-- ✅ Browser cleanup (close while preserving cookies)
-- ✅ Custom user agent and browser fingerprinting
+- ✅ Manual login support (non-headless mode, the recommended default)
+- ✅ Cookie listing (names and attributes, never values; optional)
+- ✅ Browser cleanup on close
+- ✅ Browser's own user agent (no override; headless Chrome reports `HeadlessChrome` and may be refused)
 
 ### 2. Session Management
-- ✅ In-memory cookie storage
-- ✅ Automatic cookie attachment to API requests
-- ✅ Session persistence across multiple requests
-- ✅ Cookie expiration detection and error reporting
+- ✅ Every API request sent with `fetch` from the open browser tab
+- ✅ Browser supplies its own user agent, cookies and fetch headers
+- ✅ Session persistence across multiple requests (the browser keeps cookies responses set, so an anonymous trolley persists)
+- ✅ Requests sent only from `https://www.woolworths.com.au`; any other origin fails with nothing sent
+- ✅ Failed responses reported as status, status text, content type and size, never the body
 
 ### 3. Product Search
 - ✅ Full-text product search
@@ -75,11 +76,11 @@
 
 ## 📋 Available Tools
 
-| # | Tool Name | Description | Auth Required |
+| # | Tool Name | Description | API Call (sent from open browser) |
 |---|-----------|-------------|---------------|
 | 1 | `woolworths_open_browser` | Launch browser to Woolworths | No |
 | 2 | `woolworths_navigate` | Navigate to specific URL | No |
-| 3 | `woolworths_get_cookies` | Capture session cookies | No |
+| 3 | `woolworths_get_cookies` | List cookie names and attributes (optional) | No |
 | 4 | `woolworths_close_browser` | Close browser window | No |
 | 5 | `woolworths_search_products` | Search product catalog | Yes |
 | 6 | `woolworths_get_product_details` | Get product details | Yes |
@@ -125,7 +126,8 @@
 ## 🔒 Security Features
 
 - ✅ No hardcoded credentials
-- ✅ Session cookies stored only in memory
+- ✅ Server stores no cookies; they stay in the browser
+- ✅ Cookie values never returned by any tool
 - ✅ HTTPS-only communication
 - ✅ stdio transport (no network exposure)
 - ✅ User-controlled authentication (manual login)
@@ -165,9 +167,9 @@
 
 ## 🚀 Performance Features
 
-- ✅ Efficient cookie management
+- ✅ No separate cookie capture step
 - ✅ Minimal browser overhead (headless option)
-- ✅ Reusable session cookies
+- ✅ One browser session reused by every API call
 - ✅ Pagination for large result sets
 - ✅ Concurrent API request capability
 
@@ -195,7 +197,6 @@
 
 ### Potential Features (Not Yet Implemented)
 - ⏳ Cookie persistence to encrypted file
-- ⏳ Automatic cookie refresh
 - ⏳ Multiple store location support
 - ⏳ Order history retrieval
 - ⏳ Recipe suggestions
@@ -210,10 +211,10 @@
 
 ## 📈 Current Limitations
 
-1. **Session Duration**: Cookies expire after ~1 hour (Woolworths limitation)
+1. **Session Duration**: Sessions expire after ~1 hour (Woolworths limitation)
 2. **No Checkout**: Cannot complete purchases through API
 3. **No Order History**: Cannot retrieve past orders
-4. **Single Account**: One session at a time
+4. **Single Account**: One session at a time, and API tools need its browser open
 5. **Location**: Australian Woolworths only
 6. **Rate Limiting**: Subject to Woolworths' rate limits
 7. **API Changes**: Dependent on Woolworths' internal APIs
