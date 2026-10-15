@@ -253,13 +253,13 @@ Woolworths' bot protection blocks a client that sends requests in a burst, and t
 
 - **Pacing:** requests go out one at a time, about one a second. Each starts after the previous one finished, and at least 1 second plus up to 0.5 seconds of random jitter after it started. Concurrent tool calls wait their turn.
 - **Timeout:** a request with no answer in 15 seconds is cancelled and the tool returns `Woolworths did not respond in time`. For a cart change the error says the change may have been applied: check `woolworths_get_cart` before retrying.
-- **Rate limiting:** three refusals within a minute (a 403, 429 or 5xx, a timeout, a network failure, or a 200 that is not the expected JSON) stop all requests for 5 minutes. Meanwhile every API tool returns `Woolworths is rate-limiting; retry in N min` and sends nothing; cached results are still served. After the 5 minutes one request is let through: if it succeeds, requests resume, and if it is refused, the wait starts again. A 404 or 400, such as an unknown stockcode, does not count.
+- **Rate limiting:** three refusals within a minute (a 403, 429 or 5xx, a timeout, a network failure, or a 200 that is not the expected JSON) stop all requests for 5 minutes. Meanwhile every call that would send a request returns `Woolworths is rate-limiting; retry in N min` and sends nothing. Cached category results are still served; cached search, product and specials results are served only if this browser session read its store before the 5 minutes began (see [Cache](#cache)). After the 5 minutes one request is let through: if it succeeds, requests resume, and if it is refused, the wait starts again. A 404 or 400, such as an unknown stockcode, does not count.
 
 The server never retries a request by itself: a retry would only add to the requests the bot protection counts.
 
 ### Cache
 
-Search, product detail, specials and category results are cached on disk with [CacheKit](https://github.com/cachekit-io/cachekit-ts), so a repeated call, even after a restart, sends no request:
+Search, product detail, specials and category results are cached on disk with [CacheKit](https://github.com/cachekit-io/cachekit-ts), so a repeated call, even after a restart, does not fetch the result again:
 
 | Tool | Kept for | Keyed on |
 |---|---|---|
@@ -344,7 +344,7 @@ Puppeteer only guarantees compatibility with the Chrome version it bundles, so a
 - Ensure the browser is open (`woolworths_open_browser`); with it closed, every API tool returns an error and sends nothing
 - If the error says the tab is not on https://www.woolworths.com.au, use `woolworths_navigate` to return to a www.woolworths.com.au page
 - If the session has expired, close and reopen the browser, and log in again if needed
-- `Woolworths is rate-limiting; retry in N min` means the site refused three requests within a minute. Wait the minutes it gives; reopening the browser does not shorten the wait
+- `Woolworths is rate-limiting; retry in N min` means the site refused three requests within a minute. Wait the minutes it gives; reopening the browser does not shorten the wait, and a reopened browser serves no cached search, product or specials results until it ends
 - `Woolworths did not respond in time` means a request got no answer in 15 seconds, often the start of a block. Slow down, and reopen the browser if it keeps happening
 - Verify the API endpoints are still valid
 

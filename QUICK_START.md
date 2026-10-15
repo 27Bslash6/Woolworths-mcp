@@ -105,7 +105,7 @@ Shopping commands stop working until you open the browser again.
 
 **"API request failed: 403"** → Session expired or refused: close and reopen the browser (headed), and log in again if needed. After three refusals within a minute the server stops sending for 5 minutes
 
-**"Woolworths is rate-limiting; retry in N min"** → The site refused three requests within a minute, so nothing is sent until the minutes given have passed. Cached results are still served
+**"Woolworths is rate-limiting; retry in N min"** → The site refused three requests within a minute, so nothing is sent until the minutes given have passed. Cached categories are still served; cached searches, products and specials are served only if this browser read its store before the pause began
 
 **Server won't start** → Check you've run `pnpm run build`
 

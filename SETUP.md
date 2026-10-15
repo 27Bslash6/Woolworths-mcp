@@ -166,9 +166,9 @@ Assistant: [Closes browser]
 
 ### "Woolworths is rate-limiting; retry in N min" Error
 
-**Problem**: Woolworths refused three requests within a minute, so the server sends nothing for 5 minutes. Cached results are still served.
+**Problem**: Woolworths refused three requests within a minute, so the server sends nothing for 5 minutes. Cached category results are still served; cached search, product and specials results are served only if this browser session read its store before the 5 minutes began.
 
-**Solution**: Wait the minutes the error gives. Reopening the browser does not shorten the wait. Requests are already paced at about one a second, so this usually means the session itself is being refused: reopen the browser (headed) and log in again.
+**Solution**: Wait the minutes the error gives. Reopening the browser does not shorten the wait, and a reopened browser serves no cached search, product or specials results until it ends. Requests are already paced at about one a second, so this usually means the session itself is being refused: reopen the browser (headed) and log in again.
 
 ### Puppeteer Install Issues
 
