@@ -71,7 +71,7 @@ Welcome! This is your complete guide to the Woolworths MCP Server.
 - **src/server.ts** - MCP tools and Woolworths API calls; **src/index.ts** starts it on stdio
   - Browser automation with Puppeteer
   - 12 MCP tools
-  - Session cookie management
+  - API requests sent from the open browser tab
   - API request handling
   - Error handling
 
@@ -96,7 +96,7 @@ Welcome! This is your complete guide to the Woolworths MCP Server.
 ### Browser Tools
 1. **woolworths_open_browser** - Launch Chrome browser
 2. **woolworths_navigate** - Navigate to URL
-3. **woolworths_get_cookies** - Capture session cookies
+3. **woolworths_get_cookies** - List cookie names and attributes (optional)
 4. **woolworths_close_browser** - Close browser
 
 ### Product Tools
@@ -165,8 +165,8 @@ A: See [SETUP.md](SETUP.md) Step 3
 **Q: What tools are available?**  
 A: See [README.md](README.md) "Available Tools" section
 
-**Q: How do I get session cookies?**  
-A: Follow [QUICK_START.md](QUICK_START.md) Step 1-4
+**Q: How do I start a session?**  
+A: Open the browser and log in if needed: [QUICK_START.md](QUICK_START.md) Steps 1-2. Keep the browser open while you use the API tools
 
 **Q: Can I add to shopping cart?**  
 A: Yes! See [README.md](README.md) tools 9-12

@@ -16,7 +16,7 @@ pnpm run build
 
 This will install:
 - `@modelcontextprotocol/sdk` - MCP SDK for building the server
-- `puppeteer` - Browser automation for capturing session cookies
+- `puppeteer` - Browser automation: every API request is sent from the open browser tab
 - TypeScript and type definitions
 
 ### 2. Build the Project
@@ -61,7 +61,7 @@ After restarting Claude Desktop, you should see the Woolworths tools available. 
 
 > "What Woolworths tools do you have available?"
 
-You should see 8 tools listed:
+You should see 12 tools listed:
 - woolworths_open_browser
 - woolworths_navigate
 - woolworths_get_cookies
@@ -70,12 +70,16 @@ You should see 8 tools listed:
 - woolworths_get_product_details
 - woolworths_get_specials
 - woolworths_get_categories
+- woolworths_add_to_cart
+- woolworths_get_cart
+- woolworths_remove_from_cart
+- woolworths_update_cart_quantity
 
 ## First Time Usage
 
-### Getting Session Cookies
+### Opening a Session
 
-The first thing you need to do is capture session cookies from Woolworths:
+The first thing you need to do is open the browser. Every API tool sends its request from that browser tab, so keep it open while you use them:
 
 1. **Open the browser**:
    ```
@@ -85,30 +89,23 @@ The first thing you need to do is capture session cookies from Woolworths:
    A Chrome browser window will open and navigate to woolworths.com.au
 
 2. **Log in (if needed)**:
-   - If you want to access your account features, log in manually in the browser window
-   - If you just want to browse products, you can skip this step
+   - If you want your account's trolley, log in manually in the browser window
+   - If you just want to browse products, you can skip this step. Without logging in, the cart is an anonymous trolley that the browser keeps between calls
 
-3. **Capture cookies**:
-   ```
-   "Get the Woolworths cookies"
-   ```
-   
-   This captures all cookies from the current session
-
-4. **Close browser**:
-   ```
-   "Close the browser"
-   ```
-   
-   The browser closes but cookies remain in memory
-
-5. **Use the API tools**:
-   Now you can search products, view specials, etc.:
+3. **Use the API tools**:
+   With the browser still open, search products, view specials, etc.:
    ```
    "Search for milk"
    "What's half price this week?"
    "Show me the fruit and veg category"
    ```
+
+4. **Close browser** when you are done:
+   ```
+   "Close the browser"
+   ```
+   
+   API tools return an error until you open the browser again
 
 ## Example Conversations
 
@@ -118,12 +115,6 @@ The first thing you need to do is capture session cookies from Woolworths:
 User: Open the Woolworths browser
 Assistant: [Opens browser]
 
-User: Get the cookies
-Assistant: [Captures 15 cookies]
-
-User: Close the browser
-Assistant: [Closes browser]
-
 User: Search for bread
 Assistant: [Returns list of bread products with prices]
 
@@ -132,47 +123,46 @@ Assistant: [Returns list of milk products]
 
 User: What's half price this week?
 Assistant: [Returns half-price specials]
+
+User: Close the browser
+Assistant: [Closes browser]
 ```
 
 ### Product Research
 
 ```
-User: Open Woolworths browser and get cookies
-Assistant: [Opens browser, then captures cookies]
-
-User: Close it
-Assistant: [Closes browser]
+User: Open Woolworths browser
+Assistant: [Opens browser]
 
 User: Search for organic bananas
 Assistant: [Returns organic banana products]
 
 User: Get details for stockcode 123456
 Assistant: [Returns detailed product information]
+
+User: Close it
+Assistant: [Closes browser]
 ```
 
 ## Troubleshooting
 
 ### "Browser is not open" Error
 
-**Problem**: You tried to get cookies but the browser isn't open.
+**Problem**: You called a tool that needs the browser, such as a search, but the browser isn't open. Nothing was sent.
 
-**Solution**: Run `woolworths_open_browser` first.
+**Solution**: Run `woolworths_open_browser` first, and keep it open while you use the API tools.
 
-### "No session cookies available" Error
+### "The browser tab is not on https://www.woolworths.com.au" Error
 
-**Problem**: You tried to search products but haven't captured cookies yet.
+**Problem**: The tab is on another origin (another site, a woolworths.com.au subdomain, or http). API calls run only from `https://www.woolworths.com.au`, so nothing was sent.
 
-**Solution**: 
-1. Open browser with `woolworths_open_browser`
-2. Capture cookies with `woolworths_get_cookies`
-3. Close browser with `woolworths_close_browser`
-4. Then try your search again
+**Solution**: Use `woolworths_navigate` to return to a www.woolworths.com.au page, then try again.
 
 ### "API request failed: 403" Error
 
-**Problem**: The session cookies have expired or are invalid.
+**Problem**: The session has expired, or the site refused the request. The error gives the status, status text, content type and size of the response, never its body.
 
-**Solution**: Re-capture cookies by opening the browser again and running through the cookie capture process.
+**Solution**: Close the browser and open it again (headed), and log in again if needed.
 
 ### Puppeteer Install Issues
 
@@ -224,7 +214,7 @@ The server logs errors to stderr. You can see these in:
 
 ### Headless Mode
 
-If you don't need to see the browser (e.g., cookies are already valid), use headless mode:
+If you don't need to see the browser, you can use headless mode, though the site may refuse headless Chrome. To enable headless:
 
 ```json
 {
@@ -245,7 +235,7 @@ const launched = await puppeteer.launch({
 
 ## Security Notes
 
-- **Cookies in Memory**: Session cookies are stored in memory only and are lost when the server restarts
+- **Cookies in the Browser**: The server keeps no cookies of its own. API requests use the browser's cookies, which are lost when the browser closes or the server restarts
 - **No Persistence**: This server doesn't save any data to disk (except for build artifacts)
 - **HTTPS Only**: All communication with Woolworths uses HTTPS
 - **Local Only**: The server only accepts connections via stdio (local only, no network exposure)

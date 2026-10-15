@@ -1,88 +1,11 @@
 // Offline lifecycle tests: puppeteer.launch is stubbed with fake browsers, so no Chrome starts.
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, test } from "node:test";
 import puppeteer from "puppeteer";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { closeBrowser, createServer, setSessionCookies } from "../dist/server.js";
-
-const HOME = "https://www.woolworths.com.au";
-
-// A promise with its resolve exposed, to hold a stubbed call open until the test releases it.
-function deferred() {
-  let resolve;
-  const promise = new Promise((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
-}
-
-// A fake page. Set `page.hold.goto` or `page.hold.cookies` to a deferred and that call waits on
-// it; goto to the homepage is never held. `calls` records the goto and url calls it receives.
-function fakePage() {
-  let url = "about:blank";
-  return {
-    hold: {},
-    calls: [],
-    async setUserAgent() {},
-    async goto(target) {
-      this.calls.push("goto");
-      if (target !== HOME && this.hold.goto) {
-        await this.hold.goto.promise;
-      }
-      url = target;
-    },
-    url() {
-      this.calls.push("url");
-      return url;
-    },
-    async title() {
-      return "Woolworths";
-    },
-    async cookies() {
-      if (this.hold.cookies) {
-        await this.hold.cookies.promise;
-      }
-      return [{ name: "fresh", value: "from-page" }];
-    },
-  };
-}
-
-// Stubs puppeteer.launch; every fake browser it returns is recorded, with whether it is still live.
-function stubLaunch(t, { launchGate, closeGate } = {}) {
-  const browsers = [];
-  const events = [];
-  t.mock.method(puppeteer, "launch", async () => {
-    if (launchGate) {
-      await launchGate.promise;
-    }
-    const browser = new EventEmitter();
-    browser.live = true;
-    browser.page = fakePage();
-    // Set `closeFailures` to make that many closes reject with Chrome left running.
-    browser.closeFailures = 0;
-    browser.proc = { exitCode: null, signalCode: null, spawnargs: [] };
-    browser.process = () => browser.proc;
-    browser.newPage = async () => browser.page;
-    browser.close = async () => {
-      if (closeGate) {
-        await closeGate.promise;
-      }
-      if (browser.closeFailures > 0) {
-        browser.closeFailures--;
-        throw new Error("close failed");
-      }
-      browser.live = false;
-      browser.proc.exitCode = 0;
-      events.push(`closed ${browsers.indexOf(browser)}`);
-    };
-    browsers.push(browser);
-    events.push(`launched ${browsers.length - 1}`);
-    return browser;
-  });
-  return { browsers, events, live: () => browsers.filter((b) => b.live) };
-}
+import { closeBrowser, createServer } from "../dist/server.js";
+import { HOME, deferred, stubLaunch } from "./fake-browser.js";
 
 let client;
 
@@ -91,18 +14,18 @@ async function call(name, args = {}) {
   return { isError: result.isError === true, payload: JSON.parse(result.content[0].text) };
 }
 
-// The Cookie header the next API call sends, read through a stubbed fetch.
-async function sentCookieHeader(t) {
-  const fetch = t.mock.method(globalThis, "fetch", async () => Response.json({}));
-  await call("woolworths_get_cart");
-  return fetch.mock.calls.at(-1).arguments[1].headers.Cookie;
+// Which browser's tab the next API call runs in (its index in `browsers`), read through a stubbed fetch.
+async function servingBrowser(t, browsers) {
+  t.mock.method(globalThis, "fetch", async () => Response.json({}));
+  browsers.forEach((browser) => (browser.page.calls.length = 0));
+  assert.equal((await call("woolworths_get_cart")).isError, false);
+  return browsers.findIndex((browser) => browser.page.calls.includes("evaluate"));
 }
 
 // Lets pending promise callbacks run, so a call reaches its next await.
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 beforeEach(async () => {
-  setSessionCookies([{ name: "session", value: "test" }]);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await createServer().connect(serverTransport);
   client = new Client({ name: "test", version: "0" });
@@ -116,7 +39,7 @@ afterEach(async () => {
 
 test("two concurrent opens launch one browser", async (t) => {
   const launchGate = deferred();
-  const { live } = stubLaunch(t, { launchGate });
+  const { live } = stubLaunch(t.mock, { launchGate });
 
   const first = call("woolworths_open_browser", { headless: true });
   const second = call("woolworths_open_browser", { headless: true });
@@ -132,7 +55,7 @@ test("two concurrent opens launch one browser", async (t) => {
 
 test("an open during a slow close launches only after the close finishes", async (t) => {
   const closeGate = deferred();
-  const { browsers, events, live } = stubLaunch(t, { closeGate });
+  const { browsers, events, live } = stubLaunch(t.mock, { closeGate });
   assert.equal((await call("woolworths_open_browser", { headless: true })).isError, false);
 
   const closing = call("woolworths_close_browser");
@@ -149,7 +72,7 @@ test("an open during a slow close launches only after the close finishes", async
 });
 
 test("a browser whose close fails while it runs blocks every launch until it is closed", async (t) => {
-  const { browsers, events, live } = stubLaunch(t);
+  const { browsers, events, live } = stubLaunch(t.mock);
   await call("woolworths_open_browser", { headless: true });
   browsers[0].closeFailures = 2;
 
@@ -170,7 +93,7 @@ test("a browser whose close fails while it runs blocks every launch until it is 
 });
 
 test("a close that fails after Chrome exited does not block the next open", async (t) => {
-  const { browsers, live } = stubLaunch(t);
+  const { browsers, live } = stubLaunch(t.mock);
   await call("woolworths_open_browser", { headless: true });
   browsers[0].close = async () => {
     browsers[0].live = false;
@@ -189,8 +112,8 @@ async function replaceSession() {
   assert.equal((await call("woolworths_open_browser", { headless: true })).isError, false);
 }
 
-test("get_cookies whose session is replaced mid-call is an error and keeps the stored cookies", async (t) => {
-  const { browsers } = stubLaunch(t);
+test("get_cookies whose session is replaced mid-call is an error, and API calls use the new session", async (t) => {
+  const { browsers } = stubLaunch(t.mock);
   await call("woolworths_open_browser", { headless: true });
   const held = deferred();
   browsers[0].page.hold.cookies = held;
@@ -203,11 +126,11 @@ test("get_cookies whose session is replaced mid-call is an error and keeps the s
 
   assert.equal(isError, true);
   assert.match(payload.error, /closed or reopened/);
-  assert.equal(await sentCookieHeader(t), "session=test");
+  assert.equal(await servingBrowser(t, browsers), 1);
 });
 
 test("navigate whose session is replaced mid-goto is an error and never touches the new page", async (t) => {
-  const { browsers } = stubLaunch(t);
+  const { browsers } = stubLaunch(t.mock);
   await call("woolworths_open_browser", { headless: true });
   const held = deferred();
   browsers[0].page.hold.goto = held;
@@ -225,8 +148,30 @@ test("navigate whose session is replaced mid-goto is an error and never touches 
   assert.deepEqual(newPage.calls, []);
 });
 
+test("an API call whose session is replaced mid-request is an error and never touches the new page", async (t) => {
+  const { browsers } = stubLaunch(t.mock);
+  await call("woolworths_open_browser", { headless: true });
+  const held = deferred();
+  t.mock.method(globalThis, "fetch", async () => {
+    await held.promise;
+    return Response.json({});
+  });
+
+  const reading = call("woolworths_get_cart");
+  await settle();
+  await replaceSession();
+  const newPage = browsers[1].page;
+  newPage.calls.length = 0;
+  held.resolve();
+  const { isError, payload } = await reading;
+
+  assert.equal(isError, true);
+  assert.match(payload.error, /closed or reopened/);
+  assert.deepEqual(newPage.calls, []);
+});
+
 test("a session stays usable when nothing replaces it", async (t) => {
-  stubLaunch(t);
+  const { browsers } = stubLaunch(t.mock);
   await call("woolworths_open_browser", { headless: true });
 
   const navigated = await call("woolworths_navigate", { url: `${HOME}/shop/browse/fruit-veg` });
@@ -234,5 +179,5 @@ test("a session stays usable when nothing replaces it", async (t) => {
 
   assert.equal(navigated.isError, false);
   assert.equal(captured.isError, false);
-  assert.equal(await sentCookieHeader(t), "fresh=from-page");
+  assert.equal(await servingBrowser(t, browsers), 0);
 });

@@ -2,20 +2,20 @@
 
 ## Overview
 
-This is a fully functional Model Context Protocol (MCP) server that enables AI assistants to interact with Woolworths Australia's online shopping platform. The server uses browser automation to capture session cookies and then makes authenticated API calls to Woolworths' backend services.
+This is a fully functional Model Context Protocol (MCP) server that enables AI assistants to interact with Woolworths Australia's online shopping platform. The server uses browser automation to open a Woolworths tab and makes its API calls to Woolworths' backend services from inside that tab, with the browser's own session.
 
 ## Key Features
 
 ### 🌐 Browser Automation
 - Uses Puppeteer to launch and control a Chrome browser
 - Navigates to Woolworths website
-- Captures session cookies for API authentication
+- Sends every API request with `fetch` from the open tab, so the browser supplies its user agent, cookies and headers
 - Inspired by chrome-devtools-mcp architecture
 
 ### 🔐 Session Management
-- Stores session cookies in memory
-- Maintains authentication across multiple API calls
-- Handles cookie expiration gracefully
+- Keeps the session in the browser; the server stores no cookies
+- Maintains authentication across multiple API calls while the browser is open
+- Reports a failed response as status, status text, content type and size, never the body
 
 ### 🛒 Shopping Features
 - **Product Search**: Search the entire Woolworths catalog
@@ -37,12 +37,12 @@ This is a fully functional Model Context Protocol (MCP) server that enables AI a
 │  │  Browser Automation Layer (Puppeteer)            │  │
 │  │  - Open browser                                  │  │
 │  │  - Navigate to Woolworths                        │  │
-│  │  - Capture cookies                               │  │
+│  │  - Send API requests from the tab                │  │
 │  └──────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────┐  │
-│  │  Cookie Management                               │  │
-│  │  - Store session cookies                         │  │
-│  │  - Attach to API requests                        │  │
+│  │  Session (in the browser)                        │  │
+│  │  - Browser holds the session cookies             │  │
+│  │  - Requests only from www.woolworths.com.au      │  │
 │  └──────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │  API Tools                                       │  │
@@ -87,12 +87,12 @@ Woolworths/
 |------|---------|----------------|
 | `woolworths_open_browser` | Launch browser and navigate to Woolworths | None |
 | `woolworths_navigate` | Navigate to specific URL | None |
-| `woolworths_get_cookies` | Capture session cookies | None |
+| `woolworths_get_cookies` | List cookie names and attributes (optional) | None |
 | `woolworths_close_browser` | Close browser window | None |
-| `woolworths_search_products` | Search for products | Requires cookies |
-| `woolworths_get_product_details` | Get detailed product info | Requires cookies |
-| `woolworths_get_specials` | Browse current specials | Requires cookies |
-| `woolworths_get_categories` | List product categories | Requires cookies |
+| `woolworths_search_products` | Search for products | Requires open browser |
+| `woolworths_get_product_details` | Get detailed product info | Requires open browser |
+| `woolworths_get_specials` | Browse current specials | Requires open browser |
+| `woolworths_get_categories` | List product categories | Requires open browser |
 
 ## Technology Stack
 
@@ -100,7 +100,7 @@ Woolworths/
 - **Language**: TypeScript 7
 - **MCP SDK**: @modelcontextprotocol/sdk 1.32
 - **Browser Automation**: Puppeteer 25
-- **HTTP Client**: Node's built-in `fetch`
+- **HTTP Client**: The browser's `fetch`, run inside the open tab
 
 ## API Endpoints Used
 
@@ -135,25 +135,23 @@ The server interacts with these Woolworths internal APIs:
    - Server launches Puppeteer browser
    - Browser navigates to Woolworths
    - User can manually log in if needed
-   - Server captures all cookies
-   - Browser closes (cookies persist in memory)
+   - Browser stays open for the API phase
 
 2. **API Phase**:
    - User requests product search/details/specials
-   - Server attaches cookies to requests
-   - Server calls Woolworths API
+   - Server calls Woolworths API from the open tab; the browser attaches its cookies
    - Server returns structured data to user
 
 ## Security Considerations
 
 ✅ **What's Secure:**
-- Cookies stored only in memory (not persisted to disk)
+- Cookies stay in the browser; the server stores none and no tool returns their values
 - HTTPS for all external communications
 - stdio transport (no network exposure)
 - No hardcoded credentials
 
 ⚠️ **Limitations:**
-- Cookies lost on server restart
+- Session lost when the browser closes or the server restarts
 - No encryption of in-memory data
 - Relies on user's own Woolworths account
 
@@ -215,8 +213,8 @@ Search for ingredients and check availability.
 The server handles these error scenarios:
 
 - **Browser not open**: Returns helpful error message
-- **No cookies**: Prompts user to capture cookies first
-- **API failures**: Returns error details with HTTP status
+- **Tab off www.woolworths.com.au**: Sends nothing and asks the user to navigate back
+- **API failures**: Returns HTTP status, status text, content type and size, never the body
 - **Network issues**: Gracefully handles timeouts and connection errors
 - **Invalid stockcodes**: Returns appropriate error from API
 
@@ -236,8 +234,8 @@ The server handles these error scenarios:
 | Issue | Solution |
 |-------|----------|
 | "Browser is not open" | Run `woolworths_open_browser` |
-| "No session cookies" | Capture cookies with `woolworths_get_cookies` |
-| "API request failed: 403" | Cookies expired - recapture them |
+| "The browser tab is not on https://www.woolworths.com.au" | Navigate back with `woolworths_navigate` |
+| "API request failed: 403" | Session expired or refused - close and reopen the browser (headed) |
 | Puppeteer won't install | Use Node 22 or 24, delete the puppeteer cache folder (`~/.cache/puppeteer/chrome`, or `%USERPROFILE%\.cache\puppeteer\chrome` on Windows) and re-run the install script |
 | Server won't start | Check Node version (needs 22 or 24) |
 
