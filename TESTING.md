@@ -376,7 +376,6 @@ After any code changes, run this minimal regression suite:
 |-------|--------|------------|
 | Session expires after ~1 hour | API calls fail with 401/403 | Close and re-open the browser, and log in again if needed |
 | API tools need the browser open | Closing it stops every API call | Keep the browser open while using API tools |
-| Headless Chrome reports `HeadlessChrome` | Site may refuse requests | Use headed mode (the default) |
 | Account trolley needs login | Anonymous trolley otherwise | Log in in the browser window |
 | API rate limiting | May throttle requests | Add delays between bulk operations |
 | Woolworths API changes | Server may break | Update endpoints as needed |

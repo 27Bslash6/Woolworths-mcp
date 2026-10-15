@@ -44,10 +44,13 @@ function fakePage() {
     },
     async evaluate(fn, arg) {
       this.calls.push("evaluate");
+      // Rebuilt from its source and given a JSON copy of its argument, as Puppeteer does, so a
+      // reference to anything outside the function fails here as it would in Chrome.
+      const inPage = (0, eval)(`(${fn.toString()})`);
       globalThis.location = new URL(url);
       let pending;
       try {
-        pending = fn(arg);
+        pending = inPage(JSON.parse(JSON.stringify(arg)));
       } finally {
         delete globalThis.location;
       }

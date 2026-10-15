@@ -214,7 +214,7 @@ The server logs errors to stderr. You can see these in:
 
 ### Headless Mode
 
-If you don't need to see the browser, you can use headless mode. Headed (the default) is recommended: in headless mode Chrome reports `HeadlessChrome` in its user agent, and the site may refuse it.
+If you don't need to see the browser, you can use headless mode, though the site may refuse headless Chrome:
 
 ```json
 {

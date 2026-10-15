@@ -88,7 +88,6 @@ Shopping commands stop working until you open the browser again.
 - 💡 Keep the browser open while you shop: closing it stops every shopping command
 - 🔄 If you get a 403 error, your session expired - close and reopen the browser
 - 🛍️ Log in if you want your account's trolley; otherwise the cart is an anonymous trolley kept by the browser
-- 🖥️ Leave the browser headed (the default): the site may refuse headless Chrome
 - 📦 Note the stockcode from search results to add items to cart
 
 ## Full Documentation

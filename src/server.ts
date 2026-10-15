@@ -115,33 +115,24 @@ export function closeBrowser(): Promise<boolean> {
 // Every API call is sent from this origin only, so the request carries the tab's own cookies.
 const WOOLWORTHS_ORIGIN = "https://www.woolworths.com.au";
 
-interface TabResponse {
-  sent: boolean;
-  ok: boolean;
-  status: number;
-  statusText: string;
-  contentType: string;
-  size: number;
-  text?: string;
-}
-
 // Runs inside the tab (page.evaluate serialises it, so it may use only its argument). The origin test
 // and the fetch share one synchronous step: script cannot move the tab between them, and an off-origin
-// document sends nothing. `location` is unforgeable, so another origin's script cannot fake the test.
+// document sends nothing (null). `location` is unforgeable, so another origin's script cannot fake the
+// test, and same-origin mode refuses a redirect to another origin before it is followed.
 // The browser supplies the user agent, cookies and fetch metadata, and keeps any Set-Cookie it gets.
 // A failed response's body never leaves the tab: only its size does.
 async function fetchInTab(request: { origin: string; url: string; body?: string }) {
   if (location.origin !== request.origin) {
-    return { sent: false, ok: false, status: 0, statusText: "", contentType: "", size: 0 };
+    return null;
   }
   const response = await fetch(request.url, {
+    mode: "same-origin",
     method: request.body === undefined ? "GET" : "POST",
     headers: request.body === undefined ? {} : { "Content-Type": "application/json" },
     body: request.body,
   });
   const bytes = await response.arrayBuffer();
   return {
-    sent: true,
     ok: response.ok,
     status: response.status,
     statusText: response.statusText,
@@ -150,6 +141,8 @@ async function fetchInTab(request: { origin: string; url: string; body?: string 
     text: response.ok ? new TextDecoder().decode(bytes) : undefined,
   };
 }
+
+type TabResponse = NonNullable<Awaited<ReturnType<typeof fetchInTab>>>;
 
 // Status, status text, media type and size: enough to tell a block page from an outage, with no body.
 function describeResponse({ status, statusText, contentType, size }: TabResponse): string {
@@ -163,14 +156,24 @@ function describeResponse({ status, statusText, contentType, size }: TabResponse
 // default the current one). Fails, rather than return a result, if that session is replaced.
 async function makeWoolworthsRequest<T>(url: string, body?: unknown, started = currentSession()): Promise<T> {
   assertCurrent(started);
-  const response: TabResponse = await started.page.evaluate(fetchInTab, {
-    origin: WOOLWORTHS_ORIGIN,
-    url,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  assertCurrent(started);
+  let response;
+  try {
+    response = await started.page.evaluate(fetchInTab, {
+      origin: WOOLWORTHS_ORIGIN,
+      url,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    assertCurrent(started);
+  } catch (error) {
+    if (body === undefined) {
+      throw error;
+    }
+    // The POST may have reached Woolworths before this failed; a blind retry could apply it twice.
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`${reason} The update may have been applied: check woolworths_get_cart before retrying.`);
+  }
 
-  if (!response.sent) {
+  if (!response) {
     throw new Error(
       `The browser tab is not on ${WOOLWORTHS_ORIGIN}, so nothing was sent. Use woolworths_navigate to return to it.`
     );

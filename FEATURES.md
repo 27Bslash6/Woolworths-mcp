@@ -8,7 +8,7 @@
 - ✅ Manual login support (non-headless mode, the recommended default)
 - ✅ Cookie listing (names and attributes, never values; optional)
 - ✅ Browser cleanup on close
-- ✅ Browser's own user agent (no override; headless Chrome reports `HeadlessChrome` and may be refused)
+- ✅ Browser's own user agent (no override)
 
 ### 2. Session Management
 - ✅ Every API request sent with `fetch` from the open browser tab

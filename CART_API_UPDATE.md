@@ -30,18 +30,13 @@ The new API uses a standardized request body format:
 }
 ```
 
-### 3. Updated Headers
-Added additional headers to match the current Woolworths API requirements:
-- `Accept: */*`
-- `sec-fetch-dest: empty`
-- `sec-fetch-mode: cors`
-- `sec-fetch-site: same-origin`
-- `Priority: u=1, i`
+### 3. Headers
+Requests are sent with `fetch` from the open browser tab, so the browser supplies the user agent, cookies and `sec-fetch-*` headers. The server sets only `Content-Type: application/json` on a POST body.
 
 ### 4. Functions Updated
 - `handleUpdateTrolley()` - Sets a product's trolley quantity with the new endpoint and request format; update calls it directly, and remove sends `quantity: 0`
 - `handleAddToTrolley()` - The endpoint sets a quantity and does not add to it, so add reads `GET /apis/ui/Trolley` first and sets the current quantity plus the requested one. A failed read writes nothing
-- `makeWoolworthsRequest()` - Updated headers to match current API requirements
+- `makeWoolworthsRequest()` - Sends each request from the open browser tab
 
 ## Testing
 After restarting Cursor/Claude Desktop, the cart functionality should work correctly. You can test by:

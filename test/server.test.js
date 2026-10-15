@@ -287,6 +287,28 @@ test("a thrown non-Error value still fills the error field", async (t) => {
   assert.deepEqual(payload, { success: false, error: "socket hang up" });
 });
 
+test("a cart write that fails in flight says it may have been applied", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => {
+    throw new TypeError("Failed to fetch");
+  });
+
+  const write = await call("woolworths_update_cart_quantity", { stockcode: 1, quantity: 2 });
+  const read = await call("woolworths_get_cart");
+
+  assert.equal(write.isError, true);
+  assert.match(write.payload.error, /^Failed to fetch The update may have been applied: check woolworths_get_cart/);
+  assert.equal(read.payload.error, "Failed to fetch");
+});
+
+test("requests refuse redirects to another origin", async (t) => {
+  const fetch = t.mock.method(globalThis, "fetch", async () => Response.json({}));
+
+  await call("woolworths_get_cart");
+  await call("woolworths_update_cart_quantity", { stockcode: 1, quantity: 2 });
+
+  assert.deepEqual(fetch.mock.calls.map((c) => c.arguments[1].mode), ["same-origin", "same-origin"]);
+});
+
 test("closing a browser that is not open is an isError result", async () => {
   await closeBrowser();
   const { isError, payload } = await call("woolworths_close_browser");

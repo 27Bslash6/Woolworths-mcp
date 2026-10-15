@@ -289,7 +289,7 @@ The tests stub `puppeteer.launch` with fake browsers (`test/fake-browser.js`). T
 
 ### Browser won't open
 - Check that Puppeteer installed correctly
-- Try running with headless: true if display issues occur (the site may refuse headless Chrome)
+- Try running with headless: true if display issues occur
 
 ### `No usable sandbox!` on Linux
 Chromium always runs with its sandbox enabled; Puppeteer's `PUPPETEER_DANGEROUS_NO_SANDBOX` is ignored, and a launch that ends up with the sandbox disabled is refused. Linux distributions that restrict unprivileged user namespaces (Ubuntu 23.10 and later, via AppArmor) only grant them to specific browser binaries by path, such as the installed Google Chrome at `/opt/google/chrome/chrome`. The Chrome for Testing build that Puppeteer downloads is not covered, so it aborts at launch with `FATAL ... No usable sandbox!`.
@@ -316,7 +316,6 @@ Puppeteer only guarantees compatibility with the Chrome version it bundles, so a
 - Ensure the browser is open (`woolworths_open_browser`); with it closed, every API tool returns an error and sends nothing
 - If the error says the tab is not on https://www.woolworths.com.au, use `woolworths_navigate` to return to a www.woolworths.com.au page
 - If the session has expired, close and reopen the browser, and log in again if needed
-- If you run headless, try headed mode: the site may refuse `HeadlessChrome`
 - Verify the API endpoints are still valid
 
 ### Connection issues
