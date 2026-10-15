@@ -214,7 +214,7 @@ The server logs errors to stderr. You can see these in:
 
 ### Headless Mode
 
-If you don't need to see the browser, you can use headless mode, though the site may refuse headless Chrome:
+If you don't need to see the browser, you can use headless mode, though the site may refuse headless Chrome. To enable headless:
 
 ```json
 {

@@ -118,7 +118,7 @@ const WOOLWORTHS_ORIGIN = "https://www.woolworths.com.au";
 // Runs inside the tab (page.evaluate serialises it, so it may use only its argument). The origin test
 // and the fetch share one synchronous step: script cannot move the tab between them, and an off-origin
 // document sends nothing (null). `location` is unforgeable, so another origin's script cannot fake the
-// test, and same-origin mode refuses a redirect to another origin before it is followed.
+// test. No `mode` is set: Chrome sends it as Sec-Fetch-Mode, and the site's own requests use the default.
 // The browser supplies the user agent, cookies and fetch metadata, and keeps any Set-Cookie it gets.
 // A failed response's body never leaves the tab: only its size does.
 async function fetchInTab(request: { origin: string; url: string; body?: string }) {
@@ -126,7 +126,6 @@ async function fetchInTab(request: { origin: string; url: string; body?: string 
     return null;
   }
   const response = await fetch(request.url, {
-    mode: "same-origin",
     method: request.body === undefined ? "GET" : "POST",
     headers: request.body === undefined ? {} : { "Content-Type": "application/json" },
     body: request.body,
@@ -170,7 +169,7 @@ async function makeWoolworthsRequest<T>(url: string, body?: unknown, started = c
     }
     // The POST may have reached Woolworths before this failed; a blind retry could apply it twice.
     const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(`${reason} The update may have been applied: check woolworths_get_cart before retrying.`);
+    throw new Error(`The update may have been applied (${reason}); check woolworths_get_cart before retrying.`);
   }
 
   if (!response) {

@@ -96,6 +96,8 @@ test("specials POST the site's browse request and return slim products", async (
   assert.equal(init.method, "POST");
   // The browser sets the user agent, cookies and fetch metadata; only the body's type is ours.
   assert.deepEqual(init.headers, { "Content-Type": "application/json" });
+  // The default mode, so Chrome sends Sec-Fetch-Mode: cors as the site's own requests do.
+  assert.equal(init.mode, undefined);
   const body = JSON.parse(init.body);
   assert.equal(body.categoryId, "specialsgroup.3676.1_39FD49C");
   assert.equal(body.pageNumber, 2);
@@ -151,6 +153,7 @@ test("product details GET the detail endpoint for the stockcode", async (t) => {
   assert.equal(url, `${BASE}/apis/ui/product/detail/223104`);
   assert.equal(init.method, "GET");
   assert.deepEqual(init.headers, {});
+  assert.equal(init.mode, undefined);
   assert.equal(payload.product.Product.Stockcode, 223104);
 });
 
@@ -296,17 +299,11 @@ test("a cart write that fails in flight says it may have been applied", async (t
   const read = await call("woolworths_get_cart");
 
   assert.equal(write.isError, true);
-  assert.match(write.payload.error, /^Failed to fetch The update may have been applied: check woolworths_get_cart/);
+  assert.equal(
+    write.payload.error,
+    "The update may have been applied (Failed to fetch); check woolworths_get_cart before retrying."
+  );
   assert.equal(read.payload.error, "Failed to fetch");
-});
-
-test("requests refuse redirects to another origin", async (t) => {
-  const fetch = t.mock.method(globalThis, "fetch", async () => Response.json({}));
-
-  await call("woolworths_get_cart");
-  await call("woolworths_update_cart_quantity", { stockcode: 1, quantity: 2 });
-
-  assert.deepEqual(fetch.mock.calls.map((c) => c.arguments[1].mode), ["same-origin", "same-origin"]);
 });
 
 test("closing a browser that is not open is an isError result", async () => {
