@@ -1,6 +1,10 @@
 // Fake browsers for the offline tests: puppeteer.launch is stubbed, so no Chrome starts.
 import { EventEmitter } from "node:events";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import puppeteer from "puppeteer";
+import { limits, resetState } from "../dist/server.js";
 
 export const HOME = "https://www.woolworths.com.au";
 
@@ -94,4 +98,37 @@ export function stubLaunch(mock, { launchGate, closeGate } = {}) {
     return browser;
   });
   return { browsers, events, live: () => browsers.filter((b) => b.live) };
+}
+
+export const STORE_ID = 1234;
+
+// Stubs globalThis.fetch through `mock`. The store id lookup is answered here with `storeId`; every
+// other request goes to `api`, whose mock (returned) records only those requests.
+export function stubApi(mock, api, { storeId = STORE_ID } = {}) {
+  const stub = mock.fn(api);
+  mock.method(globalThis, "fetch", (url, init) =>
+    new URL(url).pathname === "/api/ui/v2/bootstrap"
+      ? Promise.resolve(Response.json({ GetDeliveryInfoRequest: { FulfilmentStoreId: storeId } }))
+      : stub(url, init)
+  );
+  return stub;
+}
+
+const cacheDirs = [];
+
+// Clears the server's gate, breaker, store id and cache, and points the cache at a fresh temporary
+// directory, so no test reads another's entries or touches the user's cache. Requests are not paced.
+export async function resetServer() {
+  const dir = mkdtempSync(join(tmpdir(), "woolworths-mcp-test-"));
+  cacheDirs.push(dir);
+  process.env.WOOLWORTHS_MCP_CACHE_DIR = dir;
+  await resetState();
+  Object.assign(limits, { intervalMs: 0, jitterMs: 0, timeoutMs: 15_000 });
+}
+
+export async function removeCacheDirs() {
+  await resetState();
+  for (const dir of cacheDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }

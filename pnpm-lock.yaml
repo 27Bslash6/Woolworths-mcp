@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@cachekit-io/cachekit':
+        specifier: 0.1.5
+        version: 0.1.5
       '@modelcontextprotocol/sdk':
         specifier: 1.32.1
         version: 1.32.1(zod@4.6.5)
@@ -33,11 +36,65 @@ importers:
 
 packages:
 
+  '@cachekit-io/cachekit-core-ts-darwin-arm64@0.1.2':
+    resolution: {integrity: sha512-XDlI/KcPQszpznVL268obRmmioFkKGLzOQbY9zGEhpMqYwfPq/5Gl7a8N30e71nM99Hr4Jg76097HGwknZeuLg==}
+    engines: {node: '>=22.0.0'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@cachekit-io/cachekit-core-ts-darwin-x64@0.1.2':
+    resolution: {integrity: sha512-RYbHtNrqf7NtrmCWvp51rGY3YqEWP1/GCPoXM9gmorV/4/UhdYBl0s5aHU1zkAnhd5aooPLQOtfO9uXST6mfvg==}
+    engines: {node: '>=22.0.0'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@cachekit-io/cachekit-core-ts-linux-arm64-gnu@0.1.2':
+    resolution: {integrity: sha512-xeXcVrMeVaJNV6MBxt4tTKvXjW8Rr3Zasbtjk0c9QSrGT66ttYbl8YdL2dDBrAgfcMZjIKqXihziUiivpbFIbA==}
+    engines: {node: '>=22.0.0'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@cachekit-io/cachekit-core-ts-linux-x64-gnu@0.1.2':
+    resolution: {integrity: sha512-gyeBhltAISUb6ELuYRzmcD1PNTrTwpcBtOnJoCWRAGbxGAtSRsiH2DKQY8V8HIb3o0T6J3ZakYanUsgWKWl7Rg==}
+    engines: {node: '>=22.0.0'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@cachekit-io/cachekit-core-ts-win32-x64-msvc@0.1.2':
+    resolution: {integrity: sha512-sPgXFjNkN1lFVhcTI9aTR1oQ55OnWVeRLmGAv3pAq+YqbmGEsvTcz9tjv6d5x8I9QAYXfNjbieAlv2tIR/fEKQ==}
+    engines: {node: '>=22.0.0'}
+    cpu: [x64]
+    os: [win32]
+
+  '@cachekit-io/cachekit-core-ts@0.1.2':
+    resolution: {integrity: sha512-tn3OM+Zkr4nWDkBPRAg5b6Ksp6EsGmt0Xlxpv5AXL+xPsaD7OruYtF/j8KBBGl71b3UsJNnhC0UuOkj9ZkcMiQ==}
+    engines: {node: '>=22.0.0'}
+
+  '@cachekit-io/cachekit-core-wasm@0.1.1':
+    resolution: {integrity: sha512-nv2U2msQw67sXPclGSHZBqekkkIsYRd/9D30/BJbUXkJPHoIZYLqdoyEgjrN/pVRMx+IuKVhkw2ZYhS5B78njA==}
+
+  '@cachekit-io/cachekit@0.1.5':
+    resolution: {integrity: sha512-UEWeAQtZ/TDyfMAsECbpkkvpyI/dVGtJlIQFP+TrNdHW58nHJKZGAfjq/8iOg4BGiCumBdRQSYZIzxMTHj88Vw==}
+    engines: {node: '>=22.0.0'}
+    peerDependencies:
+      memjs: '>=1.3.0'
+      prom-client: '>=14.0.0'
+    peerDependenciesMeta:
+      memjs:
+        optional: true
+      prom-client:
+        optional: true
+
   '@hono/node-server@2.1.4':
     resolution: {integrity: sha512-2g1qeHl4BduwDn6L8nkAvDrPUWPMlkQ//a5NhP/zIyaXKMjZNRV+cG9Csu+BiJFf6+68pqzjf4Hi5sJGKHuS1g==}
     engines: {node: '>=20'}
     peerDependencies:
       hono: ^4 || ^5.0.0-0
+
+  '@ioredis/commands@1.10.0':
+    resolution: {integrity: sha512-UmeW7z4LfctwoQ5wkhVzgq8tXkreED2xZGpX+Bg+zA+WJFZCT6c062AfCK/Dfk81xZnnwdhJCUMkitihRaoC2Q==}
 
   '@modelcontextprotocol/sdk@1.32.1':
     resolution: {integrity: sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==}
@@ -48,6 +105,14 @@ packages:
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
+
+  '@msgpack/msgpack@3.1.3':
+    resolution: {integrity: sha512-47XIizs9XZXvuJgoaJUIE2lFoID8ugvc0jzSHP+Ptfk8nTbnR8g788wv48N03Kx0UkAv559HWRQ3yzOgzlRNUA==}
+    engines: {node: '>= 18'}
+
+  '@noble/hashes@2.4.0':
+    resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
+    engines: {node: '>= 20.19.0'}
 
   '@oxlint-tsgolint/darwin-arm64@7.0.2004':
     resolution: {integrity: sha512-uJk3ttju7Lz+Nv8WG4CsLyewoL1qf/Ny8S8OksJ7Bm/F14Tc9gMfW6arM1PCc57IzH/X/I79YsCWTgxX1FKibQ==}
@@ -389,6 +454,10 @@ packages:
     resolution: {integrity: sha512-k7ndgKhwoQveBL+/1tqGJYNz097I7WOvwbmmU2AR5+magtbjPWQTS1C5vzGkBC8Ym8UWRzfKUzUUqFLypY4Q+w==}
     engines: {node: '>=20'}
 
+  cluster-key-slot@1.1.1:
+    resolution: {integrity: sha512-rwHwUfXL40Chm1r08yrhU3qpUvdVlgkKNeyeGPOxnW8/SyVDvgRaed/Uz54AqWNaTCAThlj6QAs3TZcKI0xDEw==}
+    engines: {node: '>=0.10.0'}
+
   content-disposition@2.0.1:
     resolution: {integrity: sha512-e+H0ZXHSWYrENhQzw1LPuP4oF5MzVKmDU6d3hxlvaPEYLLg62MxtQNPRx4SYSuYJSBUgnQIG4HIN2tEtNv7Dog==}
     engines: {node: '>=18'}
@@ -425,6 +494,10 @@ packages:
     peerDependenciesMeta:
       supports-color:
         optional: true
+
+  denque@2.1.0:
+    resolution: {integrity: sha512-HVQE3AAb/pxF8fQAoiqpvg9i3evqug3hoiwakOyZAwJm+6vZehbkYXZ0l4JxS+I3QxM97v5aaRNhj8v5oBhekw==}
+    engines: {node: '>=0.10'}
 
   depd@2.0.0:
     resolution: {integrity: sha512-g7nH6P6dyDioJogAAGprGpCtVImJhpPk/roCzdb3fIh61/s/nPsfR6onyMwkCAR/OlC3yBC0lESvUoQEAssIrw==}
@@ -554,6 +627,10 @@ packages:
 
   inherits@2.0.4:
     resolution: {integrity: sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ==}
+
+  ioredis@5.11.1:
+    resolution: {integrity: sha512-ehuGcf94bQXhfagULNXrJdfnWO38v070jxSx/qE87Kjzmu2fU7ro5EFAb+OPituLqgfyuQaym5DlrNydW2sJ9A==}
+    engines: {node: '>=12.22.0'}
 
   ip-address@10.7.3:
     resolution: {integrity: sha512-A1kdq/tSb5QjvKvAMgIoEvDBIgL7qaqVP/jkvSwYYRZ9iEzvPpopxp2wQfu3SuZRHtpHNxMn8Fs0bS+gf5Xmwg==}
@@ -691,6 +768,14 @@ packages:
     resolution: {integrity: sha512-K5zQjDllxWkf7Z5xJdV0/B0WTNqx6vxG70zJE4N0kBs4LovmEYWJzQGxC9bS9RAKu3bgM40lrd5zoLJ12MQ5BA==}
     engines: {node: '>= 0.10'}
 
+  redis-errors@1.2.0:
+    resolution: {integrity: sha512-1qny3OExCf0UvUV/5wpYKf2YwPcOqXzkwKKSmKHiE6ZMQs5heeE/c8eXK+PNllPvmjgAbfnsbpkGZWy8cBpn9w==}
+    engines: {node: '>=4'}
+
+  redis-parser@3.0.0:
+    resolution: {integrity: sha512-DJnGAeenTdpMEH6uAJRK/uiyEIH9WVsUmoLwzudwGJUwZPp80PDBWPHXSAGNPwNvIXAbe7MSUB1zQFugFml66A==}
+    engines: {node: '>=4'}
+
   require-from-string@2.0.2:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
     engines: {node: '>=0.10.0'}
@@ -736,6 +821,9 @@ packages:
   side-channel@1.1.1:
     resolution: {integrity: sha512-6x6dK6zJdpTzF4sQeNYxwtvBzf6Eg4GtlesS94HOvTudUeyK2WXAaIfmDgsyslYrRBeFIlsi54AYsFGUuhmvrQ==}
     engines: {node: '>= 0.4'}
+
+  standard-as-callback@2.1.0:
+    resolution: {integrity: sha512-qoRRSyROncaz1z0mvYqIE4lCd9p2R90i6GxW3uZv5ucSu8tU7B5HXUP1gG8pVZsYNVaXjk8ClXHPttLyxAL48A==}
 
   statuses@2.0.2:
     resolution: {integrity: sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==}
@@ -835,9 +923,46 @@ packages:
 
 snapshots:
 
+  '@cachekit-io/cachekit-core-ts-darwin-arm64@0.1.2':
+    optional: true
+
+  '@cachekit-io/cachekit-core-ts-darwin-x64@0.1.2':
+    optional: true
+
+  '@cachekit-io/cachekit-core-ts-linux-arm64-gnu@0.1.2':
+    optional: true
+
+  '@cachekit-io/cachekit-core-ts-linux-x64-gnu@0.1.2':
+    optional: true
+
+  '@cachekit-io/cachekit-core-ts-win32-x64-msvc@0.1.2':
+    optional: true
+
+  '@cachekit-io/cachekit-core-ts@0.1.2':
+    optionalDependencies:
+      '@cachekit-io/cachekit-core-ts-darwin-arm64': 0.1.2
+      '@cachekit-io/cachekit-core-ts-darwin-x64': 0.1.2
+      '@cachekit-io/cachekit-core-ts-linux-arm64-gnu': 0.1.2
+      '@cachekit-io/cachekit-core-ts-linux-x64-gnu': 0.1.2
+      '@cachekit-io/cachekit-core-ts-win32-x64-msvc': 0.1.2
+
+  '@cachekit-io/cachekit-core-wasm@0.1.1': {}
+
+  '@cachekit-io/cachekit@0.1.5':
+    dependencies:
+      '@cachekit-io/cachekit-core-ts': 0.1.2
+      '@cachekit-io/cachekit-core-wasm': 0.1.1
+      '@msgpack/msgpack': 3.1.3
+      '@noble/hashes': 2.4.0
+      ioredis: 5.11.1
+    transitivePeerDependencies:
+      - supports-color
+
   '@hono/node-server@2.1.4(hono@4.13.13)':
     dependencies:
       hono: 4.13.13
+
+  '@ioredis/commands@1.10.0': {}
 
   '@modelcontextprotocol/sdk@1.32.1(zod@4.6.5)':
     dependencies:
@@ -860,6 +985,10 @@ snapshots:
       zod-to-json-schema: 3.25.2(zod@4.6.5)
     transitivePeerDependencies:
       - supports-color
+
+  '@msgpack/msgpack@3.1.3': {}
+
+  '@noble/hashes@2.4.0': {}
 
   '@oxlint-tsgolint/darwin-arm64@7.0.2004':
     optional: true
@@ -1068,6 +1197,8 @@ snapshots:
       strip-ansi: 7.2.0
       wrap-ansi: 9.0.2
 
+  cluster-key-slot@1.1.1: {}
+
   content-disposition@2.0.1: {}
 
   content-type@1.0.5: {}
@@ -1092,6 +1223,8 @@ snapshots:
   debug@4.4.3:
     dependencies:
       ms: 2.1.3
+
+  denque@2.1.0: {}
 
   depd@2.0.0: {}
 
@@ -1242,6 +1375,18 @@ snapshots:
 
   inherits@2.0.4: {}
 
+  ioredis@5.11.1:
+    dependencies:
+      '@ioredis/commands': 1.10.0
+      cluster-key-slot: 1.1.1
+      debug: 4.4.3
+      denque: 2.1.0
+      redis-errors: 1.2.0
+      redis-parser: 3.0.0
+      standard-as-callback: 2.1.0
+    transitivePeerDependencies:
+      - supports-color
+
   ip-address@10.7.3: {}
 
   ipaddr.js@1.9.1: {}
@@ -1382,6 +1527,12 @@ snapshots:
       iconv-lite: 0.7.3
       unpipe: 1.0.0
 
+  redis-errors@1.2.0: {}
+
+  redis-parser@3.0.0:
+    dependencies:
+      redis-errors: 1.2.0
+
   require-from-string@2.0.2: {}
 
   router@2.2.0:
@@ -1456,6 +1607,8 @@ snapshots:
       side-channel-list: 1.0.1
       side-channel-map: 1.0.1
       side-channel-weakmap: 1.0.2
+
+  standard-as-callback@2.1.0: {}
 
   statuses@2.0.2: {}
 

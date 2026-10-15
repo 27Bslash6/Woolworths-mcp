@@ -2,11 +2,11 @@
 // to the network. Run `pnpm test` (builds dist/ first).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, mock, test } from "node:test";
+import { after, afterEach, beforeEach, mock, test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { closeBrowser, createServer } from "../dist/server.js";
-import { stubLaunch } from "./fake-browser.js";
+import { removeCacheDirs, resetServer, stubApi, stubLaunch } from "./fake-browser.js";
 
 const readJson = (name) => JSON.parse(readFileSync(new URL(name, import.meta.url), "utf8"));
 const toolNames = readJson("./tool-names.json");
@@ -43,6 +43,7 @@ async function call(name, args = {}) {
 // Every test starts with a fake browser open on the Woolworths homepage.
 let browsers;
 beforeEach(async () => {
+  await resetServer();
   ({ browsers } = stubLaunch(mock));
   assert.equal((await call("woolworths_open_browser", { headless: true })).isError, false);
 });
@@ -52,6 +53,8 @@ afterEach(async () => {
   mock.restoreAll();
 });
 
+after(removeCacheDirs);
+
 test("tools/list returns the 12 tools", async () => {
   const client = await connect();
   const { tools } = await client.listTools();
@@ -60,7 +63,7 @@ test("tools/list returns the 12 tools", async () => {
 });
 
 test("search returns slim products, smaller than the raw ones", async (t) => {
-  t.mock.method(globalThis, "fetch", async () => Response.json(searchFixture));
+  stubApi(t.mock, async () => Response.json(searchFixture));
 
   const { isError, payload } = await call("woolworths_search_products", { searchTerm: "milk" });
 
@@ -81,7 +84,7 @@ test("search returns slim products, smaller than the raw ones", async (t) => {
 });
 
 test("specials POST the site's browse request and return slim products", async (t) => {
-  const fetch = t.mock.method(globalThis, "fetch", async () => Response.json(specialsFixture));
+  const fetch = stubApi(t.mock, async () => Response.json(specialsFixture));
 
   const { isError, payload } = await call("woolworths_get_specials", {
     category: "1_39FD49C",
@@ -98,6 +101,8 @@ test("specials POST the site's browse request and return slim products", async (
   assert.deepEqual(init.headers, { "Content-Type": "application/json" });
   // The default mode, so Chrome sends Sec-Fetch-Mode: cors as the site's own requests do.
   assert.equal(init.mode, undefined);
+  // The in-tab timeout.
+  assert.ok(init.signal instanceof AbortSignal);
   const body = JSON.parse(init.body);
   assert.equal(body.categoryId, "specialsgroup.3676.1_39FD49C");
   assert.equal(body.pageNumber, 2);
@@ -115,7 +120,7 @@ test("specials POST the site's browse request and return slim products", async (
 });
 
 test("specials pick the listing from category and halfPrice", async (t) => {
-  const fetch = t.mock.method(globalThis, "fetch", async () => Response.json(specialsFixture));
+  const fetch = stubApi(t.mock, async () => Response.json(specialsFixture));
 
   await call("woolworths_get_specials", { halfPrice: true });
   await call("woolworths_get_specials", { category: "1_39FD49C" });
@@ -125,7 +130,7 @@ test("specials pick the listing from category and halfPrice", async (t) => {
 });
 
 test("specials need a category or halfPrice, and a NodeId-shaped category", async (t) => {
-  const fetch = t.mock.method(globalThis, "fetch", async () => Response.json(specialsFixture));
+  const fetch = stubApi(t.mock, async () => Response.json(specialsFixture));
 
   const neither = await call("woolworths_get_specials");
   const client = await connect();
@@ -144,7 +149,7 @@ test("specials need a category or halfPrice, and a NodeId-shaped category", asyn
 });
 
 test("product details GET the detail endpoint for the stockcode", async (t) => {
-  const fetch = t.mock.method(globalThis, "fetch", async () => Response.json(detailFixture));
+  const fetch = stubApi(t.mock, async () => Response.json(detailFixture));
 
   const { isError, payload } = await call("woolworths_get_product_details", { stockcode: 223104 });
 
@@ -158,7 +163,7 @@ test("product details GET the detail endpoint for the stockcode", async (t) => {
 });
 
 test("categories return two levels of the tree without the specials listings", async (t) => {
-  const fetch = t.mock.method(globalThis, "fetch", async () => Response.json(categoriesFixture));
+  const fetch = stubApi(t.mock, async () => Response.json(categoriesFixture));
 
   const { isError, payload } = await call("woolworths_get_categories");
 
@@ -181,7 +186,7 @@ test("categories return two levels of the tree without the specials listings", a
 });
 
 test("a 200 without the array a handler slims is an isError result, not an empty success", async (t) => {
-  t.mock.method(globalThis, "fetch", async () => Response.json({ message: "Access Denied" }));
+  stubApi(t.mock, async () => Response.json({ message: "Access Denied" }));
 
   const categories = await call("woolworths_get_categories");
   const specials = await call("woolworths_get_specials", { halfPrice: true });
@@ -193,7 +198,7 @@ test("a 200 without the array a handler slims is an isError result, not an empty
 });
 
 test("a specials bundle without Products is an isError result naming the field", async (t) => {
-  t.mock.method(globalThis, "fetch", async () => Response.json({ Bundles: [{}] }));
+  stubApi(t.mock, async () => Response.json({ Bundles: [{}] }));
 
   const { isError, payload } = await call("woolworths_get_specials", { halfPrice: true });
 
@@ -202,7 +207,7 @@ test("a specials bundle without Products is an isError result naming the field",
 });
 
 test("a non-2xx response is an isError result with the status, type and size, not the body", async (t) => {
-  t.mock.method(globalThis, "fetch", async () =>
+  stubApi(t.mock, async () =>
     new Response("upstream down", { status: 503, statusText: "Service Unavailable" })
   );
 
@@ -216,7 +221,7 @@ test("a non-2xx response is an isError result with the status, type and size, no
 test("a 100 KB HTML block page becomes a short error with no markup", async (t) => {
   const page = `<html><body>${"<p>Access Denied</p>".repeat(6000)}</body></html>`;
   assert.ok(page.length >= 100 * 1024);
-  t.mock.method(globalThis, "fetch", async () =>
+  stubApi(t.mock, async () =>
     new Response(page, { status: 403, statusText: "Forbidden", headers: { "Content-Type": "text/html; charset=utf-8" } })
   );
 
@@ -230,7 +235,7 @@ test("a 100 KB HTML block page becomes a short error with no markup", async (t) 
 });
 
 test("a 200 that is not JSON is an isError result without the body", async (t) => {
-  t.mock.method(globalThis, "fetch", async () =>
+  stubApi(t.mock, async () =>
     new Response("<html>challenge</html>", { headers: { "Content-Type": "text/html" } })
   );
 
@@ -253,7 +258,7 @@ const apiCalls = [
 ];
 
 test("with the browser closed, every API tool says to open it and sends nothing", async (t) => {
-  const fetch = t.mock.method(globalThis, "fetch", async () => Response.json({}));
+  const fetch = stubApi(t.mock, async () => Response.json({}));
   await closeBrowser();
 
   for (const [name, args] of apiCalls) {
@@ -265,7 +270,7 @@ test("with the browser closed, every API tool says to open it and sends nothing"
 });
 
 test("with the tab moved off the Woolworths origin, every API tool fails and sends nothing", async (t) => {
-  const fetch = t.mock.method(globalThis, "fetch", async () => Response.json({}));
+  const fetch = stubApi(t.mock, async () => Response.json({}));
 
   for (const elsewhere of ["https://attacker.example/", "https://woolworths.com.au/", "http://www.woolworths.com.au/"]) {
     // In-page script navigating the tab, which bypasses woolworths_navigate's checks.
@@ -280,7 +285,7 @@ test("with the tab moved off the Woolworths origin, every API tool fails and sen
 });
 
 test("a thrown non-Error value still fills the error field", async (t) => {
-  t.mock.method(globalThis, "fetch", async () => {
+  stubApi(t.mock, async () => {
     throw "socket hang up";
   });
 
@@ -291,7 +296,7 @@ test("a thrown non-Error value still fills the error field", async (t) => {
 });
 
 test("a cart write that fails in flight says it may have been applied", async (t) => {
-  t.mock.method(globalThis, "fetch", async () => {
+  stubApi(t.mock, async () => {
     throw new TypeError("Failed to fetch");
   });
 
@@ -317,7 +322,7 @@ test("closing a browser that is not open is an isError result", async () => {
 // Stubs the trolley read with `trolley` and the update with a 200; returns every request made.
 function stubTrolley(t, trolley) {
   const requests = [];
-  t.mock.method(globalThis, "fetch", async (url, init) => {
+  stubApi(t.mock, async (url, init) => {
     requests.push({ url, method: init.method, body: init.body && JSON.parse(init.body) });
     return Response.json(url.endsWith("/apis/ui/Trolley") ? trolley : { UpdatedItems: [] });
   });
@@ -350,7 +355,7 @@ for (const { name, trolley, add, sent } of [
 
 test("add_to_cart fails with no update sent if its session is replaced after the trolley read", async (t) => {
   const requests = [];
-  t.mock.method(globalThis, "fetch", async (url, init) => {
+  stubApi(t.mock, async (url, init) => {
     requests.push(`${init.method} ${new URL(url).pathname}`);
     if (!url.endsWith("/apis/ui/Trolley")) {
       return Response.json({ UpdatedItems: [] });

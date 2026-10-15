@@ -441,9 +441,10 @@ GET /apis/ui/settings
 
 ## ⚡ Rate Limiting
 
-- ✅ No explicit rate limits documented
-- ⚠️ Standard browser-like request patterns recommended
-- ❌ Avoid aggressive scraping
+- ⚠️ No rate limit is documented, but bot protection blocks bursts: about 150 searches in a few minutes got a client blocked, and blocked requests hang instead of failing
+- ✅ The MCP server sends one request at a time, at least 1 s (plus up to 0.5 s of jitter) apart, and cancels any request after 15 s
+- ✅ Three refusals within a minute (403, 429, 5xx, timeout, network failure, or a 200 that is not the expected JSON) stop all requests for 5 minutes; then one request probes, and a success resumes
+- ✅ Repeat reads are served from a disk cache (see README, Cache), so they send nothing
 
 ## 📝 Important Notes
 
