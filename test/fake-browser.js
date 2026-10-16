@@ -4,7 +4,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import puppeteer from "puppeteer";
-import { limits, resetState } from "../dist/server.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { createServer, limits, resetState } from "../dist/server.js";
 
 export const HOME = "https://www.woolworths.com.au";
 
@@ -19,6 +21,8 @@ export function deferred() {
 
 // A fake page. Set `page.hold.goto` or `page.hold.cookies` to a deferred and that call waits on
 // it; goto to the homepage is never held. `calls` records the goto, url and evaluate calls it gets.
+// For the next evaluate only, set `page.fault` to make it reject (a browser fault, nothing sent), or
+// `page.drift` to a URL the tab moves to just before it runs (after the server's own origin check).
 // evaluate runs the server's in-tab function in Node, with `location` set to the page's URL for its
 // synchronous start, so its `fetch` is the test's stub of globalThis.fetch.
 function fakePage() {
@@ -48,6 +52,14 @@ function fakePage() {
     },
     async evaluate(fn, arg) {
       this.calls.push("evaluate");
+      const { fault, drift } = this;
+      this.fault = this.drift = undefined;
+      if (fault) {
+        throw fault;
+      }
+      if (drift) {
+        url = drift;
+      }
       // Rebuilt from its source and given a JSON copy of its argument, as Puppeteer does, so a
       // reference to anything outside the function fails here as it would in Chrome.
       const inPage = (0, eval)(`(${fn.toString()})`);
@@ -130,5 +142,26 @@ export async function removeCacheDirs() {
   await resetState();
   for (const dir of cacheDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Calls one tool through a fresh MCP client, as a model would.
+export async function call(name, args = {}) {
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await createServer().connect(serverTransport);
+  const client = new Client({ name: "test", version: "0" });
+  await client.connect(clientTransport);
+  try {
+    const result = await client.callTool({ name, arguments: args });
+    return { isError: result.isError === true, payload: JSON.parse(result.content[0].text), result };
+  } finally {
+    await client.close();
+  }
+}
+
+export async function openBrowser() {
+  const { isError, payload } = await call("woolworths_open_browser", { headless: true });
+  if (isError) {
+    throw new Error(payload.error);
   }
 }

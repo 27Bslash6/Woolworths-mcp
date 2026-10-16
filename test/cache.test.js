@@ -6,11 +6,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, afterEach, beforeEach, mock, test } from "node:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { cacheDir, catalogueWeek } from "../dist/cache.js";
-import { closeBrowser, createServer, limits, resetState } from "../dist/server.js";
-import { removeCacheDirs, resetServer, stubApi, stubLaunch } from "./fake-browser.js";
+import { closeBrowser, limits, resetState } from "../dist/server.js";
+import { HOME, call, openBrowser as open, removeCacheDirs, resetServer, stubApi, stubLaunch } from "./fake-browser.js";
 
 const readJson = (name) => JSON.parse(readFileSync(new URL(name, import.meta.url), "utf8"));
 const searchFixture = readJson("./fixtures/search-milk.json");
@@ -18,25 +16,12 @@ const specialsFixture = readJson("./fixtures/specials-half-price-pantry.json");
 const detailFixture = readJson("./fixtures/product-detail-223104.json");
 const categoriesFixture = readJson("./fixtures/categories.json");
 const trolleyFixture = readJson("./fixtures/trolley.json");
+const productFields = ["Stockcode", "DisplayName", "Brand", "PackageSize", "Price", "WasPrice", "IsOnSpecial", "CupString", "Unit", "IsAvailable"];
 
-async function call(name, args = {}) {
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await createServer().connect(serverTransport);
-  const client = new Client({ name: "test", version: "0" });
-  await client.connect(clientTransport);
-  try {
-    const result = await client.callTool({ name, arguments: args });
-    return { isError: result.isError === true, payload: JSON.parse(result.content[0].text), result };
-  } finally {
-    await client.close();
-  }
-}
-
-const open = async () => assert.equal((await call("woolworths_open_browser", { headless: true })).isError, false);
-
+let browsers;
 beforeEach(async () => {
   await resetServer();
-  stubLaunch(mock);
+  ({ browsers } = stubLaunch(mock));
   await open();
 });
 
@@ -134,6 +119,35 @@ test("product details drop trolley, purchase history and tracking data", async (
   }
   assert.equal(payload.product.Product.Stockcode, 223104);
   assert.equal(payload.product.Product.DisplayName, detailFixture.Product.DisplayName);
+});
+
+test("nested product records keep only search-tile fields, on the result and on disk", async (t) => {
+  const search = searchFixture.Products[0].Products[0];
+  const tile = { ...search, IsInTrolley: true, QuantityInTrolley: 7, HasBeenBoughtBefore: true };
+  const detail = structuredClone(detailFixture);
+  detail.Variants = [tile];
+  detail.VariantOptionGroups = [{ Options: [tile] }];
+  detail.Product.ChildProducts = [tile];
+  detail.Product.BundleProductGroups = [{ Products: [tile] }];
+  // A personal field Woolworths might add later is dropped too: the schema names what is kept.
+  detail.Product.LastPurchasedDate = "2026-10-01";
+  const api = stubApi(t.mock, async () => Response.json(detail));
+
+  const fresh = await call("woolworths_get_product_details", { stockcode: 223104 });
+  await closeBrowser();
+  await resetState();
+  await open();
+  const fromDisk = await call("woolworths_get_product_details", { stockcode: 223104 });
+
+  assert.equal(api.mock.callCount(), 1);
+  for (const { payload } of [fresh, fromDisk]) {
+    const text = JSON.stringify(payload);
+    for (const field of ["Trolley", "HasBeenBoughtBefore", "LastPurchasedDate", "VariantOptionGroups", "BundleProductGroups"]) {
+      assert.ok(!text.includes(field), field);
+    }
+    assert.deepEqual(payload.product.Variants, [Object.fromEntries(productFields.map((f) => [f, search[f]]))]);
+    assert.deepEqual(payload.product.Product.ChildProducts, payload.product.Variants);
+  }
 });
 
 // Store id
@@ -348,6 +362,22 @@ test("with the breaker open, a primed search is served and an unprimed one is re
   assert.match(unprimed.payload.error, /^Woolworths is rate-limiting; retry in 5 min$/);
   assert.equal(upstream.mock.callCount(), 4);
 });
+
+for (const [name, args] of reads) {
+  test(`a primed ${name} is refused, with no request, once the tab leaves the origin or the browser closes`, async (t) => {
+    const api = stubApi(t.mock, fixtures);
+    assert.equal((await call(name, args)).isError, false);
+
+    await browsers[0].page.goto("https://attacker.example/");
+    const offOrigin = await call(name, args);
+    await closeBrowser();
+    const closed = await call(name, args);
+
+    assert.match(offOrigin.payload.error, /^The browser tab is not on https:\/\/www\.woolworths\.com\.au, so nothing was sent/);
+    assert.match(closed.payload.error, /woolworths_open_browser/);
+    assert.equal(api.mock.callCount(), 1);
+  });
+}
 
 test("the trolley is never cached", async (t) => {
   const api = stubApi(t.mock, fixtures);

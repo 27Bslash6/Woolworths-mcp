@@ -1,4 +1,4 @@
-import { CircuitBreaker, CircuitBreakerOpenError } from "@cachekit-io/cachekit";
+import { CircuitBreaker } from "@cachekit-io/cachekit";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import puppeteer, { Browser, Page } from "puppeteer";
@@ -52,9 +52,11 @@ function currentSession(): Session {
   return session;
 }
 
+const REPLACED = "The browser was closed or reopened while this call ran.";
+
 function assertCurrent(started: Session): void {
   if (session !== started) {
-    throw new Error("The browser was closed or reopened while this call ran.");
+    throw new Error(REPLACED);
   }
 }
 
@@ -67,41 +69,19 @@ const pageSize = z.number().int().min(1).max(36);
 const sortType = z.enum(["TraderRelevance", "PriceAsc", "PriceDesc", "Name"]);
 type SortType = z.infer<typeof sortType>;
 
-type ApiProduct = Record<string, unknown>;
-type ApiCategory = {
-  NodeId: string;
-  Description: string;
-  UrlFriendlyName: string;
-  IsSpecial: boolean;
-  Children?: ApiCategory[];
-};
-
 // The search fields a caller needs to choose a product; Stockcode feeds the detail and cart tools.
-const SEARCH_PRODUCT_FIELDS = [
-  "Stockcode",
-  "DisplayName",
-  "Brand",
-  "PackageSize",
-  "Price",
-  "WasPrice",
-  "IsOnSpecial",
-  "CupString",
-  "Unit",
-  "IsAvailable",
-] as const;
-
-export function slimProduct(product: ApiProduct): ApiProduct {
-  // null, not undefined, for an absent field: a value read back from the cache has null there.
-  return Object.fromEntries(SEARCH_PRODUCT_FIELDS.map((field) => [field, product[field] ?? null]));
-}
-
-// A 200 without the array a slimming handler reads is a changed or blocked response, not an empty result.
-function requireArray<T>(value: T[] | undefined, field: string): T[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`Unexpected Woolworths response: no ${field} array`);
-  }
-  return value;
-}
+const productTile = z.object({
+  Stockcode: z.unknown().optional(),
+  DisplayName: z.unknown().optional(),
+  Brand: z.unknown().optional(),
+  PackageSize: z.unknown().optional(),
+  Price: z.unknown().optional(),
+  WasPrice: z.unknown().optional(),
+  IsOnSpecial: z.unknown().optional(),
+  CupString: z.unknown().optional(),
+  Unit: z.unknown().optional(),
+  IsAvailable: z.unknown().optional(),
+});
 
 // Resolves false when no browser was open. Forgets the session before closing it, so a failed
 // close cannot leave the server stuck on it; a browser that stays running is kept in `unclosed`.
@@ -245,14 +225,17 @@ function apiSession(): Session {
     // An unparseable URL is off-origin.
   }
   if (origin !== WOOLWORTHS_ORIGIN) {
-    throw new Error(
-      `The browser tab is not on ${WOOLWORTHS_ORIGIN}, so nothing was sent. Use woolworths_navigate to return to it.`
-    );
+    throw new Error(OFF_ORIGIN);
   }
   return started;
 }
 
-// A request that may have reached Woolworths with no answer back: a timeout or a network failure.
+const OFF_ORIGIN = `The browser tab is not on ${WOOLWORTHS_ORIGIN}, so nothing was sent. Use woolworths_navigate to return to it.`;
+// The in-tab check, for a tab that moved while the call waited at the gate.
+const LEFT_ORIGIN = `The browser tab left ${WOOLWORTHS_ORIGIN} while this call waited, so nothing was sent. Use woolworths_navigate to return to it.`;
+
+// A request that reached Woolworths, or may have, with no usable answer back: a timeout, a network
+// failure or a 5xx. A trolley write that fails this way may still have been applied.
 class InFlightError extends Error {}
 
 interface RequestOptions<T> {
@@ -264,95 +247,94 @@ interface RequestOptions<T> {
   isUpdate?: boolean;
 }
 
-// An outcome that does not count against the breaker, turned into an error once the call leaves it.
-interface Uncounted {
-  error: string;
-  // The request may have reached Woolworths without its result reaching us.
-  inFlight: boolean;
+// Reads the answer to a request that was sent. Runs inside the breaker: a throw counts against it, and
+// a returned error (a status that says nothing about blocking, such as 400 or 404) does not.
+function classify<T>(result: TabResult, parse: (data: unknown) => T): { data: T } | { error: string } {
+  if ("failure" in result) {
+    throw new InFlightError(
+      result.failure === "timeout" ? `Woolworths did not respond in time (${limits.timeoutMs / 1000} s)` : result.message
+    );
+  }
+  if (!result.ok) {
+    const error = `API request failed: ${describeResponse(result)}`;
+    if (result.status >= 500) {
+      throw new InFlightError(error);
+    }
+    if (countsAsBlocked(result.status)) {
+      throw new Error(error);
+    }
+    return { error };
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(result.text ?? "");
+  } catch {
+    // The parser's message quotes the body, so it is dropped.
+    throw new Error(`API response was not JSON: ${describeResponse(result)}`);
+  }
+  return { data: parse(data) };
 }
 
 // Sends one API request from the tab of session `started`, paced by the gate and guarded by the
-// breaker. Fails, rather than return a result, if that session is replaced.
+// breaker. Only a request the tab actually sent enters the breaker: a browser fault or an off-origin
+// tab never does, so it can neither count as a failure nor close a half-open breaker. Fails, rather
+// than return a result, if the session is replaced.
 async function makeWoolworthsRequest<T>(
   started: Session,
   url: string,
   { body, parse = (data) => data as T, isUpdate = false }: RequestOptions<T> = {}
 ): Promise<T> {
+  // A replaced session outranks the call's own error. A write that may have been sent says so.
+  const fail = (message: string, inFlight: boolean): Error => {
+    const reason = session === started ? message : REPLACED;
+    return new Error(
+      isUpdate && inFlight ? `The update may have been applied (${reason}); check woolworths_get_cart before retrying.` : reason
+    );
+  };
+
   refuseWhileRateLimited();
   return throughGate(async () => {
     assertCurrent(started);
     refuseWhileRateLimited();
     probing = breaker.state === "half-open";
     lastStart = Date.now();
-    let outcome: { data: T } | Uncounted;
     try {
-      outcome = await breaker.execute(async (): Promise<{ data: T } | Uncounted> => {
-        let result: Awaited<ReturnType<typeof fetchInTab>>;
-        try {
-          result = await started.page.evaluate(fetchInTab, {
-            origin: WOOLWORTHS_ORIGIN,
-            url,
-            body: body === undefined ? undefined : JSON.stringify(body),
-            timeoutMs: limits.timeoutMs,
-          });
-        } catch (fault) {
-          // The browser failed, not Woolworths.
-          return { error: errorMessage(fault), inFlight: true };
-        }
-        if (!result) {
-          return {
-            error: `The browser tab is not on ${WOOLWORTHS_ORIGIN}, so nothing was sent. Use woolworths_navigate to return to it.`,
-            inFlight: false,
-          };
-        }
-        if ("failure" in result) {
-          throw new InFlightError(
-            result.failure === "timeout"
-              ? `Woolworths did not respond in time (${limits.timeoutMs / 1000} s)`
-              : result.message
-          );
-        }
-        if (!result.ok) {
-          const error = `API request failed: ${describeResponse(result)}`;
-          if (countsAsBlocked(result.status)) {
-            throw new Error(error);
-          }
-          return { error, inFlight: false };
-        }
-        let data: unknown;
-        try {
-          data = JSON.parse(result.text ?? "");
-        } catch {
-          // The parser's message quotes the body, so it is dropped.
-          throw new Error(`API response was not JSON: ${describeResponse(result)}`);
-        }
-        return { data: parse(data) };
-      });
-    } catch (error) {
-      if (error instanceof CircuitBreakerOpenError) {
-        refuseWhileRateLimited();
+      let result: Awaited<ReturnType<typeof fetchInTab>>;
+      try {
+        result = await started.page.evaluate(fetchInTab, {
+          origin: WOOLWORTHS_ORIGIN,
+          url,
+          body: body === undefined ? undefined : JSON.stringify(body),
+          timeoutMs: limits.timeoutMs,
+        });
+      } catch (fault) {
+        // The browser failed, not Woolworths. The request may have gone out first.
+        throw fail(errorMessage(fault), true);
       }
-      if (breaker.state === "open") {
-        openedAt = Date.now();
+      if (!result) {
+        throw fail(LEFT_ORIGIN, false);
       }
-      outcome = { error: errorMessage(error), inFlight: error instanceof InFlightError };
+
+      const sent = result;
+      let outcome: { data: T } | { error: string };
+      try {
+        outcome = await breaker.execute(async () => classify(sent, parse));
+      } catch (error) {
+        if (breaker.state === "open") {
+          openedAt = Date.now();
+        }
+        throw fail(errorMessage(error), error instanceof InFlightError);
+      }
+      if ("error" in outcome) {
+        throw fail(outcome.error, false);
+      }
+      if (session !== started) {
+        throw fail(REPLACED, true);
+      }
+      return outcome.data;
     } finally {
       probing = false;
     }
-
-    try {
-      assertCurrent(started);
-    } catch (error) {
-      outcome = { error: errorMessage(error), inFlight: true };
-    }
-    if ("data" in outcome) {
-      return outcome.data;
-    }
-    if (isUpdate && outcome.inFlight) {
-      // The POST may have reached Woolworths before this failed; a blind retry could apply it twice.
-      throw new Error(`The update may have been applied (${outcome.error}); check woolworths_get_cart before retrying.`);
-    }
-    throw new Error(outcome.error);
   });
 }
 
@@ -360,23 +342,31 @@ function unexpected(what: string): Error {
   return new Error(`Unexpected Woolworths response: ${what}`);
 }
 
-function asObject(data: unknown): Record<string, unknown> {
-  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+// Parses a 200's JSON against the shape a tool reads. Zod drops every key a schema does not name, so a
+// response schema is also the allowlist of what a tool returns and the cache keeps.
+function parseShape<S extends z.ZodType>(schema: S, data: unknown): z.output<S> {
+  const parsed = schema.safeParse(data);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  const [issue] = parsed.error.issues;
+  // ["Bundles", 0, "Products"] reads "Bundles[].Products".
+  const path = issue.path.map((key, i) => (typeof key === "number" ? "[]" : `${i ? "." : ""}${String(key)}`)).join("");
+  if (!path) {
     throw unexpected("not a JSON object");
   }
-  return data as Record<string, unknown>;
+  throw unexpected(issue.code === "invalid_type" ? `no ${path} ${issue.expected}` : `bad ${path}`);
 }
 
 const BOOTSTRAP_URL = `${WOOLWORTHS_ORIGIN}/api/ui/v2/bootstrap`;
 
 // The bootstrap response also carries the trolley, so only the store id is kept, in memory.
+const bootstrapResponse = z.object({
+  GetDeliveryInfoRequest: z.object({ FulfilmentStoreId: z.number().int().positive() }),
+});
+
 function readStoreId(data: unknown): number {
-  const delivery = asObject(data).GetDeliveryInfoRequest;
-  const storeId = typeof delivery === "object" && delivery !== null ? (delivery as Record<string, unknown>).FulfilmentStoreId : undefined;
-  if (typeof storeId !== "number" || !Number.isInteger(storeId) || storeId <= 0) {
-    throw unexpected("no FulfilmentStoreId");
-  }
-  return storeId;
+  return parseShape(bootstrapResponse, data).GetDeliveryInfoRequest.FulfilmentStoreId;
 }
 
 // Prices and availability are per store, so the store is part of every product cache key. It is read
@@ -404,7 +394,7 @@ async function launchSession(headless: boolean): Promise<Session> {
   if (unclosed) {
     await shutDown(unclosed).catch((error: unknown) => {
       throw new Error(
-        `The previous browser could not be closed: ${error instanceof Error ? error.message : String(error)}`
+        `The previous browser could not be closed: ${errorMessage(error)}`
       );
     });
   }
@@ -486,7 +476,7 @@ async function handleNavigate({ url }: { url: string }) {
     const cause = navigationError instanceof Error ? `; ${navigationError.message}` : "";
     const blanking = await page.goto("about:blank").then(
       () => "",
-      (error) => `; blanking failed: ${error instanceof Error ? error.message : error}`
+      (error) => `; blanking failed: ${errorMessage(error)}`
     );
     throw new Error(`${(blocked as Error).message} (final URL ${finalUrl}${cause}${blanking})`);
   }
@@ -563,27 +553,17 @@ interface SearchKey {
 }
 
 // Each search result is a group whose Products array holds the product itself.
-type SearchResponse = {
-  SearchResultsCount?: number;
-  Products: { Products: ApiProduct[] }[];
-  Pagination?: unknown;
-};
+const searchResponse = z.object({
+  SearchResultsCount: z.number().optional(),
+  Products: z.array(z.object({ Products: z.array(productTile) })),
+  Pagination: z.unknown().optional(),
+});
 
 // A search with no hits has no Products list and a count of 0; anything else without the groups is a
 // changed or blocked response, not an empty result.
-function readSearch(data: unknown): SearchResponse {
-  const body = asObject(data);
-  if (body.Products == null && body.SearchResultsCount === 0) {
-    return { ...body, SearchResultsCount: 0, Products: [] };
-  }
-  const groups = body.Products;
-  const valid =
-    Array.isArray(groups) &&
-    groups.every((group: unknown) => Array.isArray((group as { Products?: unknown } | null)?.Products));
-  if (!valid) {
-    throw unexpected("no Products array in every search result");
-  }
-  return body as SearchResponse;
+function readSearch(data: unknown): z.output<typeof searchResponse> {
+  const zeroHits = z.object({ SearchResultsCount: z.literal(0), Products: z.null().optional() }).safeParse(data);
+  return zeroHits.success ? { SearchResultsCount: 0, Products: [] } : parseShape(searchResponse, data);
 }
 
 async function searchUpstream(
@@ -611,7 +591,7 @@ async function searchUpstream(
     success: true,
     searchTerm,
     totalResults: data.SearchResultsCount || 0,
-    products: data.Products.flatMap((group) => group.Products.map(slimProduct)),
+    products: data.Products.flatMap((group) => group.Products),
     pagination: data.Pagination || {
       TotalRecords: data.SearchResultsCount || 0,
       PageNumber: pageNumber,
@@ -640,33 +620,40 @@ interface ProductKey {
   stockcode: number;
 }
 
-// The detail response carries this session's trolley state, purchase history and tracking data, none
-// of which may be cached.
-const DROPPED_DETAIL_FIELDS = ["DiagnosticsData", "RichRelevancePlacements"];
-const DROPPED_PRODUCT_FIELDS = [
-  "IsInTrolley",
-  "QuantityInTrolley",
-  "IsPersonalisedByPurchaseHistory",
-  "HasBeenBoughtBefore",
-  "Diagnostics",
-];
+// The detail response also carries this session's trolley state, purchase history and tracking data,
+// on the product and on every product record nested in it. Only the fields named here are kept, so
+// none of that, and nothing Woolworths adds later, can reach the cache. Nested product records are
+// cut to search tiles.
+const kept = (fields: string[]) => Object.fromEntries(fields.map((field) => [field, z.unknown().optional()]));
 
-function omit(object: Record<string, unknown>, fields: string[]): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(object).filter(([field]) => !fields.includes(field)));
-}
+const productDetail = z.object({
+  ...kept([
+    "Stockcode", "Barcode", "Name", "DisplayName", "Brand", "Description", "FullDescription", "RichDescription",
+    "Variety", "PackageSize", "Unit", "UnitWeightInGrams", "MinimumQuantity", "SupplyLimit", "ProductLimit",
+    "Price", "WasPrice", "SavingsAmount", "CupPrice", "CupMeasure", "CupString", "PricePerKGLabel",
+    "MinWeightPrice", "MaxWeightPrice", "InstorePrice", "InstoreWasPrice", "InstoreCupString", "IsOnSpecial",
+    "IsHalfPrice", "IsEdrSpecial", "InstoreIsOnSpecial", "IsNew", "IsAvailable", "IsInStock", "IsPurchasable",
+    "IsRanged", "InstoreIsAvailable", "IsForDelivery", "IsForCollection", "IsForExpress", "IsOnlineOnly",
+    "NextAvailabilityDate", "AgeRestricted", "ProductRestrictionMessage", "ProductWarningMessage",
+    "IsMarketProduct", "Vendor", "IsBundle", "HasVariants", "VariantTitle", "UrlFriendlyName",
+    "SmallImageFile", "MediumImageFile", "LargeImageFile", "Rating",
+  ]),
+  ChildProducts: z.array(productTile).nullish(),
+});
 
 // Product is null when no product has the stockcode; a 200 without the key is not a product response.
-function readProductDetail(data: unknown): Record<string, unknown> & { Product: Record<string, unknown> | null } {
-  const body = omit(asObject(data), DROPPED_DETAIL_FIELDS);
-  if (!("Product" in body)) {
-    throw unexpected("no Product");
-  }
-  return { ...body, Product: body.Product === null ? null : omit(asObject(body.Product), DROPPED_PRODUCT_FIELDS) };
-}
+const productDetailResponse = z.object({
+  Product: productDetail.nullable(),
+  ...kept([
+    "PrimaryCategory", "AdditionalAttributes", "TgaAttributes", "NutritionalInformation", "CountryOfOriginLabel",
+    "DetailsImagePaths", "VideoUrl",
+  ]),
+  Variants: z.array(productTile).nullish(),
+});
 
 async function productUpstream(started: Session, { stockcode }: ProductKey) {
   const url = `${WOOLWORTHS_ORIGIN}/apis/ui/product/detail/${encodeURIComponent(stockcode)}`;
-  const data = await makeWoolworthsRequest(started, url, { parse: readProductDetail });
+  const data = await makeWoolworthsRequest(started, url, { parse: (body) => parseShape(productDetailResponse, body) });
   if (data.Product === null) {
     throw new Error(`No product has stockcode ${stockcode}.`);
   }
@@ -697,13 +684,16 @@ interface SpecialsKey {
   pageSize: number;
 }
 
+const specialsResponse = z.object({
+  TotalRecordCount: z.number().optional(),
+  Bundles: z.array(z.object({ Products: z.array(productTile) })),
+});
+
 function readSpecials(data: unknown) {
-  const body = asObject(data) as { TotalRecordCount?: number; Bundles?: { Products?: ApiProduct[] }[] };
+  const { TotalRecordCount, Bundles } = parseShape(specialsResponse, data);
   return {
-    totalResults: body.TotalRecordCount || 0,
-    products: requireArray(body.Bundles, "Bundles").flatMap((bundle) =>
-      requireArray(bundle?.Products, "Bundles[].Products").map(slimProduct)
-    ),
+    totalResults: TotalRecordCount || 0,
+    products: Bundles.flatMap((bundle) => bundle.Products),
   };
 }
 
@@ -773,20 +763,25 @@ async function handleGetSpecials({
 
 // The full tree is about 2,700 nodes (1.7 MB as a tool result). Keep two levels of NodeId, name and
 // slug, and drop the specials listings, which woolworths_get_specials builds from a top-level NodeId.
-function slimCategory({ NodeId, Description, UrlFriendlyName }: ApiCategory) {
-  return { NodeId, Description, UrlFriendlyName };
-}
-
-function slimCategories(categories: ApiCategory[]) {
-  const plain = (list: ApiCategory[] = []) => list.filter((category) => !category.IsSpecial);
-  return plain(categories).map((category) => ({
-    ...slimCategory(category),
-    Children: plain(category.Children).map(slimCategory),
-  }));
-}
+const category = {
+  NodeId: z.string(),
+  // null, not undefined, when absent: the slim copy below names both, and the cache stores undefined as null.
+  Description: z.unknown().default(null),
+  UrlFriendlyName: z.unknown().default(null),
+  IsSpecial: z.boolean().default(false),
+};
+const categoriesResponse = z.object({
+  Categories: z.array(z.object({ ...category, Children: z.array(z.object(category)).default([]) })),
+});
 
 function readCategories(data: unknown) {
-  return slimCategories(requireArray(asObject(data).Categories as ApiCategory[] | undefined, "Categories"));
+  const plain = <C extends { IsSpecial: boolean }>(list: C[]) => list.filter((node) => !node.IsSpecial);
+  const slim = ({ NodeId, Description, UrlFriendlyName }: { NodeId: string; Description: unknown; UrlFriendlyName: unknown }) =>
+    ({ NodeId, Description, UrlFriendlyName });
+  return plain(parseShape(categoriesResponse, data).Categories).map((node) => ({
+    ...slim(node),
+    Children: plain(node.Children).map(slim),
+  }));
 }
 
 async function categoriesUpstream(started: Session) {
@@ -838,12 +833,16 @@ async function handleUpdateTrolley(
 }
 
 // Only AvailableItems lines are counted: that is the trolley shape on record (test/fixtures/trolley.json).
-function readTrolleyItems(data: unknown): ApiProduct[] {
-  const items = asObject(data).AvailableItems;
-  if (!Array.isArray(items)) {
+const trolleyItems = z.object({
+  AvailableItems: z.array(z.object({ Stockcode: z.unknown().optional(), Quantity: z.unknown().optional() })),
+});
+
+function readTrolleyItems(data: unknown) {
+  const parsed = trolleyItems.safeParse(data);
+  if (!parsed.success) {
     throw new Error("Trolley read returned no AvailableItems array; nothing was added.");
   }
-  return items as ApiProduct[];
+  return parsed.data.AvailableItems;
 }
 
 // trolley/update sets a line's quantity, so an add reads the trolley and sets current + requested.
@@ -879,7 +878,7 @@ async function toolResult(run: () => Promise<unknown>): Promise<CallToolResult> 
   try {
     return { content: [{ type: "text", text: JSON.stringify(await run(), null, 2) }] };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     return {
       content: [
         {

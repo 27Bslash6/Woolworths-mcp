@@ -2,25 +2,9 @@
 // breaker's 60-second window and 5-minute timeout are crossed.
 import assert from "node:assert/strict";
 import { after, afterEach, beforeEach, mock, test } from "node:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { closeBrowser, createServer, limits } from "../dist/server.js";
-import { HOME, removeCacheDirs, resetServer, stubApi, stubLaunch } from "./fake-browser.js";
+import { closeBrowser, limits } from "../dist/server.js";
+import { HOME, call, openBrowser as open, removeCacheDirs, resetServer, stubApi, stubLaunch } from "./fake-browser.js";
 
-async function call(name, args = {}) {
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await createServer().connect(serverTransport);
-  const client = new Client({ name: "test", version: "0" });
-  await client.connect(clientTransport);
-  try {
-    const result = await client.callTool({ name, arguments: args });
-    return { isError: result.isError === true, payload: JSON.parse(result.content[0].text) };
-  } finally {
-    await client.close();
-  }
-}
-
-const open = async () => assert.equal((await call("woolworths_open_browser", { headless: true })).isError, false);
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 // An upstream that never answers; like Chrome's fetch, it rejects when the request's signal aborts.
@@ -305,6 +289,65 @@ test("in half-open, calls that send no request leave the breaker half-open", asy
   assert.match((await call("woolworths_get_cart")).payload.error, /403/);
   assert.match((await call("woolworths_get_cart")).payload.error, RATE_LIMITED);
   assert.equal(upstream.mock.callCount(), 4);
+});
+
+for (const { kind, arm, error } of [
+  { kind: "a browser fault", arm: (page) => (page.fault = new Error("Execution context was destroyed")), error: /^Execution context was destroyed$/ },
+  { kind: "a tab that left the origin at the gate", arm: (page) => (page.drift = "https://attacker.example/"), error: /^The browser tab left https:\/\/www\.woolworths\.com\.au while this call waited, so nothing was sent/ },
+]) {
+  test(`${kind} never counts against the breaker`, async (t) => {
+    mockClock(t);
+    const upstream = stubApi(t.mock, ok);
+    for (let i = 0; i < 4; i++) {
+      arm(browsers[0].page);
+      assert.match((await call("woolworths_get_cart")).payload.error, error);
+      await browsers[0].page.goto(HOME);
+    }
+
+    assert.equal((await call("woolworths_get_cart")).isError, false);
+    assert.equal(upstream.mock.callCount(), 1);
+  });
+
+  test(`in half-open, ${kind} leaves the breaker half-open`, async (t) => {
+    const tick = mockClock(t);
+    const upstream = stubApi(t.mock, status(403));
+    await failThrice("woolworths_get_cart");
+    tick(300_000);
+
+    arm(browsers[0].page);
+    assert.match((await call("woolworths_get_cart")).payload.error, error);
+    await browsers[0].page.goto(HOME);
+
+    // Still half-open: the next call is the probe, and its one 403 reopens the breaker.
+    assert.match((await call("woolworths_get_cart")).payload.error, /403/);
+    assert.match((await call("woolworths_get_cart")).payload.error, RATE_LIMITED);
+    assert.equal(upstream.mock.callCount(), 4);
+  });
+}
+
+test("a trolley update answered with a 5xx says it may have been applied, and counts", async (t) => {
+  mockClock(t);
+  let quantity = 0;
+  const upstream = stubApi(t.mock, async (url, init) => {
+    if (url.endsWith("/apis/ui/Trolley")) {
+      return Response.json({ AvailableItems: quantity ? [{ Stockcode: 7, Quantity: quantity }] : [] });
+    }
+    // The write lands before the gateway gives up.
+    quantity = JSON.parse(init.body).items[0].quantity;
+    return new Response("", { status: 504, statusText: "Gateway Time-out" });
+  });
+
+  const { payload } = await call("woolworths_add_to_cart", { stockcode: 7, quantity: 2 });
+  await call("woolworths_update_cart_quantity", { stockcode: 7, quantity: 2 });
+  await call("woolworths_update_cart_quantity", { stockcode: 7, quantity: 2 });
+
+  assert.equal(
+    payload.error,
+    "The update may have been applied (API request failed: 504 Gateway Time-out (text/plain, 0 bytes)); check woolworths_get_cart before retrying."
+  );
+  // The trolley read, then three writes answered 504: the third opened the breaker.
+  assert.equal(upstream.mock.callCount(), 4);
+  assert.match((await call("woolworths_get_cart")).payload.error, RATE_LIMITED);
 });
 
 test("the tab returning home after an off-origin call is served again", async (t) => {
