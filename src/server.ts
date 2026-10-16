@@ -69,12 +69,12 @@ const pageSize = z.number().int().min(1).max(36);
 const sortType = z.enum(["TraderRelevance", "PriceAsc", "PriceDesc", "Name"]);
 type SortType = z.infer<typeof sortType>;
 
-// A field value a tool may return: a string, number, boolean or null. Anything else Woolworths puts in
-// a kept field, such as an object, is dropped rather than passed through with whatever it holds.
-const leaf = z.union([z.string(), z.number(), z.boolean(), z.null()]).optional().catch(undefined);
-
 // A part of a response that is optional: one that is missing or malformed is dropped, not an error.
 const part = <S extends z.ZodType>(schema: S) => schema.optional().catch(undefined);
+
+// A field value a tool may return: a string, number, boolean or null. Anything else Woolworths puts in
+// a kept field, such as an object, is dropped rather than passed through with whatever it holds.
+const leaf = part(z.union([z.string(), z.number(), z.boolean(), z.null()]));
 
 // Drops the keys a dropped field left as undefined, so a fresh result and one read back from the cache
 // (which stores undefined as null) are the same.
@@ -286,11 +286,7 @@ function classify<T>(result: TabResult, parse: (data: unknown) => T): { data: T 
     // The parser's message quotes the body, so it is dropped.
     throw new InFlightError(`API response was not JSON: ${describeResponse(result)}`);
   }
-  try {
-    return { data: parse(data) };
-  } catch (error) {
-    throw new InFlightError(errorMessage(error));
-  }
+  return { data: parse(data) };
 }
 
 // Sends one API request from the tab of session `started`, paced by the gate and guarded by the
@@ -575,7 +571,6 @@ interface SearchKey {
 const searchResponse = z.object({
   SearchResultsCount: z.number().optional(),
   Products: z.array(z.object({ Products: z.array(productTile) })),
-  Pagination: z.unknown().optional(),
 });
 
 // A search with no hits has no Products list and a count of 0; anything else without the groups is a
@@ -611,7 +606,8 @@ async function searchUpstream(
     searchTerm,
     totalResults: data.SearchResultsCount || 0,
     products: data.Products.flatMap((group) => group.Products),
-    pagination: data.Pagination || {
+    // Built here rather than passed on, so nothing Woolworths adds to its own pagination is kept.
+    pagination: {
       TotalRecords: data.SearchResultsCount || 0,
       PageNumber: pageNumber,
       PageSize: pageSize,
@@ -664,7 +660,8 @@ const productDetail = pick(
   }
 );
 
-// The product attributes a shopper asks about. The rest are the retailer's internal codes and costs.
+// The product attributes a shopper asks about. Every attribute not listed is dropped, including the
+// retailer's internal codes and costs and the non-food attributes.
 const PRODUCT_ATTRIBUTES = [
   "description", "brand", "manufacturer", "ingredients", "allergencontains", "allergenmaybepresent",
   "allergystatement", "containsgluten", "containsnuts", "contains", "lifestyleanddietarystatement",
