@@ -110,7 +110,7 @@ Search for products on Woolworths.
 - `sortType` (string, optional): Sort order, one of `TraderRelevance`, `PriceAsc`, `PriceDesc` or `Name` (default: `TraderRelevance`)
 - `isSpecial` (boolean, optional): Return only products on special (default: false)
 
-**Returns:** `totalResults`, `pagination` and `products`. Each product carries only these fields from the Woolworths response: `Stockcode`, `DisplayName`, `Brand`, `PackageSize`, `Price`, `WasPrice`, `IsOnSpecial`, `CupString`, `Unit` and `IsAvailable`. Pass `Stockcode` to the product detail and cart tools; `woolworths_get_product_details` returns the rest.
+**Returns:** `totalResults`, `pagination` and `products`. Each product carries only these fields from the Woolworths response: `Stockcode`, `DisplayName`, `Brand`, `PackageSize`, `Price`, `WasPrice`, `IsOnSpecial`, `CupString`, `Unit` and `IsAvailable`. Pass `Stockcode` to the product detail and cart tools; `woolworths_get_product_details` returns the product's full details (see below).
 
 **Example:**
 ```json
@@ -127,7 +127,7 @@ Get detailed information about a specific product by its stockcode.
 **Parameters:**
 - `stockcode` (positive integer, required): The product stockcode/ID
 
-**Returns:** `product`, the product's own fields from the Woolworths record: names and descriptions, prices and unit prices, specials flags, availability and delivery options, limits and warnings, images and rating (`Product`), plus `AdditionalAttributes` (ingredients, allergens and the like), `NutritionalInformation`, `TgaAttributes`, `CountryOfOriginLabel`, `PrimaryCategory`, `DetailsImagePaths` and `VideoUrl`. `Variants` and `Product.ChildProducts` carry the same fields as a search result. Only fields the server names are returned, so nothing that describes your session (trolley quantities, purchase history, personalisation, tracking) reaches the result or the cache. A stockcode with no product is an error.
+**Returns:** `product`, the product's own fields from the Woolworths record: names and descriptions, prices and unit prices, specials flags, availability and delivery options, limits and warnings, images and rating (`Product`); `AdditionalAttributes`, cut to what a shopper asks about (ingredients, allergens, dietary claims, health star rating, nutrition and serving notes, storage and usage, country of origin); and `NutritionalInformation`, `TgaAttributes`, `CountryOfOriginLabel`, `PrimaryCategory` (department and aisle), `DetailsImagePaths` and `VideoUrl`. `Variants` and `Product.ChildProducts` carry the same fields as a search result. Every field is named by the server down to its plain values, so nothing that describes your session (trolley quantities, purchase history, personalisation, tracking) reaches the result or the cache, even if Woolworths adds it later. A stockcode with no product is an error.
 
 ### 7. woolworths_get_specials
 

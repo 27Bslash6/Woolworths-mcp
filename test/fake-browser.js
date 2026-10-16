@@ -21,7 +21,8 @@ export function deferred() {
 
 // A fake page. Set `page.hold.goto` or `page.hold.cookies` to a deferred and that call waits on
 // it; goto to the homepage is never held. `calls` records the goto, url and evaluate calls it gets.
-// For the next evaluate only, set `page.fault` to make it reject (a browser fault, nothing sent), or
+// For the next evaluate only, set `page.fault` to make it reject (a browser fault: no answer comes back,
+// though the request may have gone out), or
 // `page.drift` to a URL the tab moves to just before it runs (after the server's own origin check).
 // evaluate runs the server's in-tab function in Node, with `location` set to the page's URL for its
 // synchronous start, so its `fetch` is the test's stub of globalThis.fetch.
@@ -145,12 +146,21 @@ export async function removeCacheDirs() {
   }
 }
 
-// Calls one tool through a fresh MCP client, as a model would.
-export async function call(name, args = {}) {
+// The fields every search result, specials product and nested product record carries.
+export const productFields = ["Stockcode", "DisplayName", "Brand", "PackageSize", "Price", "WasPrice", "IsOnSpecial", "CupString", "Unit", "IsAvailable"];
+
+// A fresh MCP client connected to a fresh server.
+export async function connect() {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await createServer().connect(serverTransport);
   const client = new Client({ name: "test", version: "0" });
   await client.connect(clientTransport);
+  return client;
+}
+
+// Calls one tool through a fresh MCP client, as a model would.
+export async function call(name, args = {}) {
+  const client = await connect();
   try {
     const result = await client.callTool({ name, arguments: args });
     return { isError: result.isError === true, payload: JSON.parse(result.content[0].text), result };

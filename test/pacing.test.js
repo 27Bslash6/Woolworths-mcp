@@ -350,6 +350,20 @@ test("a trolley update answered with a 5xx says it may have been applied, and co
   assert.match((await call("woolworths_get_cart")).payload.error, RATE_LIMITED);
 });
 
+for (const { kind, arm, answer, error } of [
+  { kind: "a browser fault", arm: (page) => (page.fault = new Error("Target closed")), answer: ok, error: "Target closed" },
+  { kind: "a 200 that is not JSON", arm: () => {}, answer: async () => new Response("<html>challenge</html>"), error: "API response was not JSON: 200 (text/plain, 22 bytes)" },
+]) {
+  test(`a trolley update met by ${kind} says it may have been applied`, async (t) => {
+    stubApi(t.mock, answer);
+    arm(browsers[0].page);
+
+    const { payload } = await call("woolworths_update_cart_quantity", { stockcode: 7, quantity: 2 });
+
+    assert.equal(payload.error, `The update may have been applied (${error}); check woolworths_get_cart before retrying.`);
+  });
+}
+
 test("the tab returning home after an off-origin call is served again", async (t) => {
   stubApi(t.mock, ok);
   await browsers[0].page.goto("https://attacker.example/");

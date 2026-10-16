@@ -3,10 +3,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { after, afterEach, beforeEach, mock, test } from "node:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { closeBrowser, createServer } from "../dist/server.js";
-import { removeCacheDirs, resetServer, stubApi, stubLaunch } from "./fake-browser.js";
+import { closeBrowser } from "../dist/server.js";
+import { call, connect, productFields, removeCacheDirs, resetServer, stubApi, stubLaunch } from "./fake-browser.js";
 
 const readJson = (name) => JSON.parse(readFileSync(new URL(name, import.meta.url), "utf8"));
 const toolNames = readJson("./tool-names.json");
@@ -19,26 +17,7 @@ const detailFixture = readJson("./fixtures/product-detail-223104.json");
 const categoriesFixture = readJson("./fixtures/categories.json");
 // One recorded anonymous trolley holding stockcode 50923 at quantity 1; it carries no session identifiers.
 const trolleyFixture = readJson("./fixtures/trolley.json");
-const productFields = ["Stockcode", "DisplayName", "Brand", "PackageSize", "Price", "WasPrice", "IsOnSpecial", "CupString", "Unit", "IsAvailable"];
 const BASE = "https://www.woolworths.com.au";
-
-async function connect() {
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await createServer().connect(serverTransport);
-  const client = new Client({ name: "test", version: "0" });
-  await client.connect(clientTransport);
-  return client;
-}
-
-async function call(name, args = {}) {
-  const client = await connect();
-  try {
-    const result = await client.callTool({ name, arguments: args });
-    return { isError: result.isError === true, payload: JSON.parse(result.content[0].text) };
-  } finally {
-    await client.close();
-  }
-}
 
 // Every test starts with a fake browser open on the Woolworths homepage.
 let browsers;

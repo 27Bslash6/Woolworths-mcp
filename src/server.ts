@@ -69,19 +69,31 @@ const pageSize = z.number().int().min(1).max(36);
 const sortType = z.enum(["TraderRelevance", "PriceAsc", "PriceDesc", "Name"]);
 type SortType = z.infer<typeof sortType>;
 
+// A field value a tool may return: a string, number, boolean or null. Anything else Woolworths puts in
+// a kept field, such as an object, is dropped rather than passed through with whatever it holds.
+const leaf = z.union([z.string(), z.number(), z.boolean(), z.null()]).optional().catch(undefined);
+
+// A part of a response that is optional: one that is missing or malformed is dropped, not an error.
+const part = <S extends z.ZodType>(schema: S) => schema.optional().catch(undefined);
+
+// Drops the keys a dropped field left as undefined, so a fresh result and one read back from the cache
+// (which stores undefined as null) are the same.
+function defined<T extends object>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined)) as T;
+}
+
+// An object of exactly the named fields, each a leaf unless `nested` gives its schema. Zod drops every
+// other key, so what a tool returns, and the cache keeps, is named here at every depth.
+function pick<const F extends string, N extends z.ZodRawShape = {}>(fields: readonly F[], nested?: N) {
+  const leaves = Object.fromEntries(fields.map((field) => [field, leaf])) as Record<F, typeof leaf>;
+  return z.object({ ...leaves, ...(nested as N) }).transform(defined);
+}
+
 // The search fields a caller needs to choose a product; Stockcode feeds the detail and cart tools.
-const productTile = z.object({
-  Stockcode: z.unknown().optional(),
-  DisplayName: z.unknown().optional(),
-  Brand: z.unknown().optional(),
-  PackageSize: z.unknown().optional(),
-  Price: z.unknown().optional(),
-  WasPrice: z.unknown().optional(),
-  IsOnSpecial: z.unknown().optional(),
-  CupString: z.unknown().optional(),
-  Unit: z.unknown().optional(),
-  IsAvailable: z.unknown().optional(),
-});
+const productTile = pick([
+  "Stockcode", "DisplayName", "Brand", "PackageSize", "Price", "WasPrice", "IsOnSpecial", "CupString", "Unit",
+  "IsAvailable",
+]);
 
 // Resolves false when no browser was open. Forgets the session before closing it, so a failed
 // close cannot leave the server stuck on it; a browser that stays running is kept in `unclosed`.
@@ -180,8 +192,9 @@ function refuseWhileRateLimited(): void {
   }
 }
 
+// A 5xx counts too, in classify.
 function countsAsBlocked(status: number): boolean {
-  return status === 403 || status === 429 || status >= 500;
+  return status === 403 || status === 429;
 }
 
 // One request at a time: each starts after the previous one settled, and at least the interval plus
@@ -235,7 +248,8 @@ const OFF_ORIGIN = `The browser tab is not on ${WOOLWORTHS_ORIGIN}, so nothing w
 const LEFT_ORIGIN = `The browser tab left ${WOOLWORTHS_ORIGIN} while this call waited, so nothing was sent. Use woolworths_navigate to return to it.`;
 
 // A request that reached Woolworths, or may have, with no usable answer back: a timeout, a network
-// failure or a 5xx. A trolley write that fails this way may still have been applied.
+// failure, a 5xx, or a 2xx that is not the expected JSON. A trolley write that fails this way may
+// still have been applied.
 class InFlightError extends Error {}
 
 interface RequestOptions<T> {
@@ -270,15 +284,20 @@ function classify<T>(result: TabResult, parse: (data: unknown) => T): { data: T 
     data = JSON.parse(result.text ?? "");
   } catch {
     // The parser's message quotes the body, so it is dropped.
-    throw new Error(`API response was not JSON: ${describeResponse(result)}`);
+    throw new InFlightError(`API response was not JSON: ${describeResponse(result)}`);
   }
-  return { data: parse(data) };
+  try {
+    return { data: parse(data) };
+  } catch (error) {
+    throw new InFlightError(errorMessage(error));
+  }
 }
 
 // Sends one API request from the tab of session `started`, paced by the gate and guarded by the
-// breaker. Only a request the tab actually sent enters the breaker: a browser fault or an off-origin
-// tab never does, so it can neither count as a failure nor close a half-open breaker. Fails, rather
-// than return a result, if the session is replaced.
+// breaker. Only an answer from Woolworths enters the breaker: a browser fault (no answer came back,
+// though the request may have gone out) or an off-origin tab (nothing was sent) never does, so it can
+// neither count as a failure nor close a half-open breaker. Fails, rather than return a result, if
+// the session is replaced.
 async function makeWoolworthsRequest<T>(
   started: Session,
   url: string,
@@ -621,13 +640,11 @@ interface ProductKey {
 }
 
 // The detail response also carries this session's trolley state, purchase history and tracking data,
-// on the product and on every product record nested in it. Only the fields named here are kept, so
-// none of that, and nothing Woolworths adds later, can reach the cache. Nested product records are
-// cut to search tiles.
-const kept = (fields: string[]) => Object.fromEntries(fields.map((field) => [field, z.unknown().optional()]));
-
-const productDetail = z.object({
-  ...kept([
+// on the product and on every product record nested in it. Only the fields named here are kept, down
+// to the leaves, so none of that, and nothing Woolworths adds later, can reach the result or the cache.
+// Nested product records are cut to search tiles.
+const productDetail = pick(
+  [
     "Stockcode", "Barcode", "Name", "DisplayName", "Brand", "Description", "FullDescription", "RichDescription",
     "Variety", "PackageSize", "Unit", "UnitWeightInGrams", "MinimumQuantity", "SupplyLimit", "ProductLimit",
     "Price", "WasPrice", "SavingsAmount", "CupPrice", "CupMeasure", "CupString", "PricePerKGLabel",
@@ -636,18 +653,42 @@ const productDetail = z.object({
     "IsRanged", "InstoreIsAvailable", "IsForDelivery", "IsForCollection", "IsForExpress", "IsOnlineOnly",
     "NextAvailabilityDate", "AgeRestricted", "ProductRestrictionMessage", "ProductWarningMessage",
     "IsMarketProduct", "Vendor", "IsBundle", "HasVariants", "VariantTitle", "UrlFriendlyName",
-    "SmallImageFile", "MediumImageFile", "LargeImageFile", "Rating",
-  ]),
-  ChildProducts: z.array(productTile).nullish(),
-});
+    "SmallImageFile", "MediumImageFile", "LargeImageFile",
+  ],
+  {
+    Rating: part(pick([
+      "Average", "ReviewCount", "RatingCount", "RatingSum", "OneStarCount", "TwoStarCount", "ThreeStarCount",
+      "FourStarCount", "FiveStarCount",
+    ])),
+    ChildProducts: z.array(productTile).nullish(),
+  }
+);
+
+// The product attributes a shopper asks about. The rest are the retailer's internal codes and costs.
+const PRODUCT_ATTRIBUTES = [
+  "description", "brand", "manufacturer", "ingredients", "allergencontains", "allergenmaybepresent",
+  "allergystatement", "containsgluten", "containsnuts", "contains", "lifestyleanddietarystatement",
+  "lifestyleclaim", "wool_dietaryclaim", "vegetarian", "claims", "healthstarrating", "nutritionalinformation",
+  "servingsize-total-nip", "servingsperpack-total-nip", "storageinstructions", "usageinstructions",
+  "importantinformation", "suitablefor", "countryoforigin", "freezable", "microwaveable", "ovencook",
+  "recyclableinformation", "wool_productpackaging",
+];
 
 // Product is null when no product has the stockcode; a 200 without the key is not a product response.
-const productDetailResponse = z.object({
+const productDetailResponse = pick(["VideoUrl"], {
   Product: productDetail.nullable(),
-  ...kept([
-    "PrimaryCategory", "AdditionalAttributes", "TgaAttributes", "NutritionalInformation", "CountryOfOriginLabel",
-    "DetailsImagePaths", "VideoUrl",
-  ]),
+  PrimaryCategory: part(pick(["Department", "Aisle"])),
+  AdditionalAttributes: part(pick(PRODUCT_ATTRIBUTES)),
+  TgaAttributes: part(pick(["Directions", "ProductWarnings", "SuitableFor", "StorageInstructions"])),
+  NutritionalInformation: part(
+    z.array(
+      pick(["Name", "ServingSize", "ServingsPerPack"], {
+        Values: part(pick(["Quantity Per Serving", "Quantity Per 100g / 100mL"])),
+      })
+    )
+  ),
+  CountryOfOriginLabel: part(pick(["CountryOfOrigin", "IngredientPercentage", "AltText", "Disclaimer"])),
+  DetailsImagePaths: part(z.array(z.string())),
   Variants: z.array(productTile).nullish(),
 });
 
@@ -763,21 +804,18 @@ async function handleGetSpecials({
 
 // The full tree is about 2,700 nodes (1.7 MB as a tool result). Keep two levels of NodeId, name and
 // slug, and drop the specials listings, which woolworths_get_specials builds from a top-level NodeId.
-const category = {
-  NodeId: z.string(),
-  // null, not undefined, when absent: the slim copy below names both, and the cache stores undefined as null.
-  Description: z.unknown().default(null),
-  UrlFriendlyName: z.unknown().default(null),
-  IsSpecial: z.boolean().default(false),
-};
+const categoryFields = { NodeId: z.string(), IsSpecial: z.boolean().default(false) };
+const category = pick(["Description", "UrlFriendlyName"], categoryFields);
 const categoriesResponse = z.object({
-  Categories: z.array(z.object({ ...category, Children: z.array(z.object(category)).default([]) })),
+  Categories: z.array(
+    pick(["Description", "UrlFriendlyName"], { ...categoryFields, Children: z.array(category).default([]) })
+  ),
 });
 
 function readCategories(data: unknown) {
   const plain = <C extends { IsSpecial: boolean }>(list: C[]) => list.filter((node) => !node.IsSpecial);
-  const slim = ({ NodeId, Description, UrlFriendlyName }: { NodeId: string; Description: unknown; UrlFriendlyName: unknown }) =>
-    ({ NodeId, Description, UrlFriendlyName });
+  const slim = ({ NodeId, Description, UrlFriendlyName }: z.output<typeof category>) =>
+    defined({ NodeId, Description, UrlFriendlyName });
   return plain(parseShape(categoriesResponse, data).Categories).map((node) => ({
     ...slim(node),
     Children: plain(node.Children).map(slim),

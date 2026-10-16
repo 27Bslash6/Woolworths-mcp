@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { after, afterEach, beforeEach, mock, test } from "node:test";
 import { cacheDir, catalogueWeek } from "../dist/cache.js";
 import { closeBrowser, limits, resetState } from "../dist/server.js";
-import { HOME, call, openBrowser as open, removeCacheDirs, resetServer, stubApi, stubLaunch } from "./fake-browser.js";
+import { call, openBrowser as open, productFields, removeCacheDirs, resetServer, stubApi, stubLaunch } from "./fake-browser.js";
 
 const readJson = (name) => JSON.parse(readFileSync(new URL(name, import.meta.url), "utf8"));
 const searchFixture = readJson("./fixtures/search-milk.json");
@@ -16,7 +16,6 @@ const specialsFixture = readJson("./fixtures/specials-half-price-pantry.json");
 const detailFixture = readJson("./fixtures/product-detail-223104.json");
 const categoriesFixture = readJson("./fixtures/categories.json");
 const trolleyFixture = readJson("./fixtures/trolley.json");
-const productFields = ["Stockcode", "DisplayName", "Brand", "PackageSize", "Price", "WasPrice", "IsOnSpecial", "CupString", "Unit", "IsAvailable"];
 
 let browsers;
 beforeEach(async () => {
@@ -148,6 +147,49 @@ test("nested product records keep only search-tile fields, on the result and on 
     assert.deepEqual(payload.product.Variants, [Object.fromEntries(productFields.map((f) => [f, search[f]]))]);
     assert.deepEqual(payload.product.Product.ChildProducts, payload.product.Variants);
   }
+});
+
+test("product details keep only named fields inside every kept object, and only plain values", async (t) => {
+  const detail = structuredClone(detailFixture);
+  const personal = { QuantityInTrolley: 7, HasBeenBoughtBefore: true, LastPurchasedDate: "2026-10-01" };
+  Object.assign(detail.AdditionalAttributes, personal);
+  Object.assign(detail.Product.Rating, personal);
+  Object.assign(detail.PrimaryCategory, personal);
+  Object.assign(detail.TgaAttributes, personal);
+  Object.assign(detail.CountryOfOriginLabel, personal);
+  Object.assign(detail.NutritionalInformation[0], personal);
+  Object.assign(detail.NutritionalInformation[0].Values, personal);
+  // A kept field that turns into an object is dropped, not passed through.
+  detail.Product.Price = { Amount: 39.5, ...personal };
+  detail.AdditionalAttributes.ingredients = { Text: "goat milk", ...personal };
+  detail.DetailsImagePaths.push(personal);
+  const api = stubApi(t.mock, async () => Response.json(detail));
+
+  const fresh = await call("woolworths_get_product_details", { stockcode: 223104 });
+  await closeBrowser();
+  await resetState();
+  await open();
+  const fromDisk = await call("woolworths_get_product_details", { stockcode: 223104 });
+
+  assert.equal(api.mock.callCount(), 1);
+  for (const { isError, payload } of [fresh, fromDisk]) {
+    assert.equal(isError, false);
+    const text = JSON.stringify(payload);
+    for (const field of Object.keys(personal)) {
+      assert.ok(!text.includes(field), field);
+    }
+    const { product } = payload;
+    assert.equal(product.Product.Price, undefined);
+    assert.equal(product.Product.DisplayName, detailFixture.Product.DisplayName);
+    assert.equal(product.AdditionalAttributes.ingredients, undefined);
+    assert.equal(product.AdditionalAttributes.allergencontains, detailFixture.AdditionalAttributes.allergencontains);
+    assert.equal(product.DetailsImagePaths, undefined);
+    assert.equal(product.NutritionalInformation[0].Values["Quantity Per Serving"], detailFixture.NutritionalInformation[0].Values["Quantity Per Serving"]);
+    // The retailer's own codes and costs are not product data.
+    assert.ok(!("vendorcostprice" in product.AdditionalAttributes));
+    assert.ok(!("sapcategoryno" in product.AdditionalAttributes));
+  }
+  assert.deepEqual(fromDisk.payload, fresh.payload);
 });
 
 // Store id
