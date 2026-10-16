@@ -162,7 +162,13 @@ Assistant: [Closes browser]
 
 **Problem**: The session has expired, or the site refused the request. The error gives the status, status text, content type and size of the response, never its body.
 
-**Solution**: Close the browser and open it again (headed), and log in again if needed.
+**Solution**: Close the browser and open it again (headed), and log in again if needed. Three refusals within a minute (a 403, 429 or 5xx, a timeout, or a 200 that is not the expected JSON) make the server stop sending for 5 minutes.
+
+### "Woolworths is rate-limiting; retry in N min" Error
+
+**Problem**: Woolworths refused three requests within a minute, so the server sends nothing for 5 minutes. Cached category results are still served; cached search, product and specials results are served only if this browser session read its store before the 5 minutes began.
+
+**Solution**: Wait the minutes the error gives. Reopening the browser does not shorten the wait, and a reopened browser serves no cached search, product or specials results until it ends. Requests are already paced at about one a second, so this usually means the session itself is being refused: once the wait is over, reopen the browser (headed) and log in again.
 
 ### Puppeteer Install Issues
 

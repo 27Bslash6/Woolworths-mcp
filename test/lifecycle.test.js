@@ -1,11 +1,11 @@
 // Offline lifecycle tests: puppeteer.launch is stubbed with fake browsers, so no Chrome starts.
 import assert from "node:assert/strict";
-import { afterEach, beforeEach, test } from "node:test";
+import { after, afterEach, beforeEach, test } from "node:test";
 import puppeteer from "puppeteer";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { closeBrowser, createServer } from "../dist/server.js";
-import { HOME, deferred, stubLaunch } from "./fake-browser.js";
+import { HOME, deferred, removeCacheDirs, resetServer, stubLaunch } from "./fake-browser.js";
 
 let client;
 
@@ -26,6 +26,7 @@ async function servingBrowser(t, browsers) {
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 beforeEach(async () => {
+  await resetServer();
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await createServer().connect(serverTransport);
   client = new Client({ name: "test", version: "0" });
@@ -36,6 +37,8 @@ afterEach(async () => {
   await client.close();
   await closeBrowser();
 });
+
+after(removeCacheDirs);
 
 test("two concurrent opens launch one browser", async (t) => {
   const launchGate = deferred();

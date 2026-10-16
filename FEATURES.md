@@ -216,7 +216,7 @@
 3. **No Order History**: Cannot retrieve past orders
 4. **Single Account**: One session at a time, and API tools need its browser open
 5. **Location**: Australian Woolworths only
-6. **Rate Limiting**: Subject to Woolworths' rate limits
+6. **Rate Limiting**: Requests are paced to about one a second, and three refusals within a minute pause all requests for 5 minutes (see README, Pacing, timeout and rate limiting)
 7. **API Changes**: Dependent on Woolworths' internal APIs
 
 ## ✅ Quality Features

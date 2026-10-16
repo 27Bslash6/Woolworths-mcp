@@ -104,13 +104,13 @@ Closes the browser instance. API tools fail until you open the browser again wit
 Search for products on Woolworths.
 
 **Parameters:**
-- `searchTerm` (string, required, non-empty): The product search term
+- `searchTerm` (string, required, non-empty): The product search term. It is trimmed, lower-cased and its inner spaces collapsed before it is sent, so `Milk ` and `milk` are the same search
 - `pageNumber` (integer, optional, 1 or more): Page number (default: 1)
 - `pageSize` (integer, optional, 1 to 36): Number of results to return (default: 36)
 - `sortType` (string, optional): Sort order, one of `TraderRelevance`, `PriceAsc`, `PriceDesc` or `Name` (default: `TraderRelevance`)
 - `isSpecial` (boolean, optional): Return only products on special (default: false)
 
-**Returns:** `totalResults`, `pagination` and `products`. Each product carries only these fields from the Woolworths response: `Stockcode`, `DisplayName`, `Brand`, `PackageSize`, `Price`, `WasPrice`, `IsOnSpecial`, `CupString`, `Unit` and `IsAvailable`. Pass `Stockcode` to the product detail and cart tools; `woolworths_get_product_details` returns everything else.
+**Returns:** `totalResults`, `pagination` and `products`. Each product carries only these fields from the Woolworths response: `Stockcode`, `DisplayName`, `Brand`, `PackageSize`, `Price`, `WasPrice`, `IsOnSpecial`, `CupString`, `Unit` and `IsAvailable`. Pass `Stockcode` to the product detail and cart tools; `woolworths_get_product_details` returns the product's full details (see below).
 
 **Example:**
 ```json
@@ -127,7 +127,7 @@ Get detailed information about a specific product by its stockcode.
 **Parameters:**
 - `stockcode` (positive integer, required): The product stockcode/ID
 
-**Returns:** `product`, the full Woolworths product record (`Product`, `NutritionalInformation`, `AdditionalAttributes` and the rest), about 30 KB.
+**Returns:** `product`, the product's own fields from the Woolworths record: names and descriptions, prices and unit prices, specials flags, availability and delivery options, limits and warnings, images and rating (`Product`); `AdditionalAttributes`, cut to what a shopper asks about (ingredients, allergens, dietary claims, health star rating, nutrition and serving notes, storage and usage, country of origin); and `NutritionalInformation`, `TgaAttributes`, `CountryOfOriginLabel`, `PrimaryCategory` (department and aisle), `DetailsImagePaths` and `VideoUrl`. `Variants` and `Product.ChildProducts` carry the same fields as a search result. Every field is named by the server down to its plain values, so nothing that describes your session (trolley quantities, purchase history, personalisation, tracking) reaches the result or the cache, even if Woolworths adds it later. A stockcode with no product is an error.
 
 ### 7. woolworths_get_specials
 
@@ -195,7 +195,7 @@ Set the quantity of a product in the shopping cart/trolley. It replaces any quan
 ## Typical Workflow
 
 1. **Open Browser**: Use `woolworths_open_browser` to launch a browser window
-2. **Log In** (if needed): The browser will open in non-headless mode by default, allowing you to manually log in to your Woolworths account if you want your account's trolley
+2. **Log In** (if needed): The browser will open in non-headless mode by default, allowing you to manually log in to your Woolworths account if you want your account's trolley. Log in, and pick your store, before the first API tool call: the store is read once per browser session (see [Cache](#cache)). If you log in or change store later, close and reopen the browser
 3. **Use API Tools**: Use any of the API tools (search, get product details, cart, etc.). Keep the browser open: each request is sent from its tab
 4. **Close Browser**: Use `woolworths_close_browser` when you are done. API tools fail until the browser is reopened
 
@@ -245,7 +245,34 @@ Each API tool sends its request from the open browser tab, so the browser suppli
 
 The session lives in the browser. The server keeps no cookies of its own: API requests use the tab's cookies, and the browser keeps any cookies a response sets, so an anonymous trolley persists between calls. Closing the browser, or restarting the server, ends the session; open the browser again (and log in again if needed) to start a new one.
 
-API calls run only while the tab is on exactly `https://www.woolworths.com.au`. If it is on any other origin (another site, a subdomain, or http), the call fails with an error saying so and nothing is sent; use `woolworths_navigate` to return to a www.woolworths.com.au page. A failed response (not 2xx, or a 200 that is not JSON) is reported as its status, status text, content type and size in bytes, never its body.
+API calls run only while the tab is on exactly `https://www.woolworths.com.au`. If it is on any other origin (another site, a subdomain, or http), the call fails with an error saying so and nothing is sent; use `woolworths_navigate` to return to a www.woolworths.com.au page. A failed response (not 2xx, or a 200 that is not JSON) is reported as its status, status text, content type and size in bytes, never its body. A 200 without the data a tool reads (a search with no product list, a product detail with no `Product`) is an error starting `Unexpected Woolworths response`, never an empty result.
+
+### Pacing, timeout and rate limiting
+
+Woolworths' bot protection blocks a client that sends requests in a burst, and then holds its requests open. So the server paces and bounds every API request, the cart's included:
+
+- **Pacing:** requests go out one at a time, about one a second. Each starts after the previous one finished, and at least 1 second plus up to 0.5 seconds of random jitter after it started. Concurrent tool calls wait their turn.
+- **Timeout:** a request with no answer in 15 seconds is cancelled and the tool returns `Woolworths did not respond in time`. For a cart change the error says the change may have been applied: check `woolworths_get_cart` before retrying.
+- **Rate limiting:** three refusals within a minute (a 403, 429 or 5xx, a timeout, a network failure, or a 200 that is not the expected JSON) stop all requests for 5 minutes. Meanwhile every call that would send a request returns `Woolworths is rate-limiting; retry in N min` and sends nothing. Cached category results are still served; cached search, product and specials results are served only if this browser session read its store before the 5 minutes began (see [Cache](#cache)). After the 5 minutes one request is let through: if it succeeds, requests resume, and if it is refused, the wait starts again. A 404 or 400, such as an unknown stockcode, does not count.
+
+The server never retries a request by itself: a retry would only add to the requests the bot protection counts.
+
+### Cache
+
+Search, product detail, specials and category results are cached on disk with [CacheKit](https://github.com/cachekit-io/cachekit-ts), so a repeated call, even after a restart, does not fetch the result again:
+
+| Tool | Kept for | Keyed on |
+|---|---|---|
+| `woolworths_search_products` | 30 minutes | store, catalogue week, search term, page, page size, sort, specials only |
+| `woolworths_get_product_details` | 6 hours | store, catalogue week, stockcode |
+| `woolworths_get_specials` | 24 hours | store, catalogue week, category, half price, page, page size |
+| `woolworths_get_categories` | 7 days | nothing (the same for every store) |
+
+The store is the one your session's cookies select. The server reads it from Woolworths once per browser session, on the first search, product or specials call, and keeps only its number, in memory. The catalogue week starts on Wednesday at 00:00 Sydney time, when prices and specials change. A failed call caches nothing.
+
+The trolley (`woolworths_get_cart` and every cart change), the store lookup's response and cookies are never cached.
+
+The cache is in `$XDG_CACHE_HOME/woolworths-mcp` (or `~/.cache/woolworths-mcp`) on Linux and macOS, and in `%LOCALAPPDATA%\woolworths-mcp` on Windows. Set `WOOLWORTHS_MCP_CACHE_DIR` in the server's environment to use another directory. To clear the cache, stop the server and delete that directory.
 
 ## Development
 
@@ -270,12 +297,13 @@ pnpm run lint   # Oxlint, type-aware
 pnpm test       # builds, then runs the offline tests in test/ with node:test
 ```
 
-The tests stub `puppeteer.launch` with fake browsers (`test/fake-browser.js`). The fake tab runs the server's real in-page request function in Node with `globalThis.fetch` stubbed, so the tests never reach the network or start a browser. `test/fixtures/` holds one recorded response per endpoint the read tools call (search, specials, product detail, categories), cut to a few results, with ad ids and tracking tokens removed.
+The tests stub `puppeteer.launch` with fake browsers (`test/fake-browser.js`), and point the cache at a fresh temporary directory, never your own. The fake tab runs the server's real in-page request function in Node with `globalThis.fetch` stubbed, so the tests never reach the network or start a browser. `test/fixtures/` holds one recorded response per endpoint the read tools call (search, specials, product detail, categories), cut to a few results, with ad ids and tracking tokens removed.
 
 ## Requirements
 
 - Node.js 22 or 24
 - pnpm 11
+- One of the five platforms CacheKit ships its native addon for, the only ones the server starts on: Linux x64 or arm64 (glibc), macOS x64 or arm64 (Intel or Apple silicon), or Windows x64
 - Chromium/Chrome (automatically installed by Puppeteer)
 
 ## Notes
@@ -316,6 +344,8 @@ Puppeteer only guarantees compatibility with the Chrome version it bundles, so a
 - Ensure the browser is open (`woolworths_open_browser`); with it closed, every API tool returns an error and sends nothing
 - If the error says the tab is not on https://www.woolworths.com.au, use `woolworths_navigate` to return to a www.woolworths.com.au page
 - If the session has expired, close and reopen the browser, and log in again if needed
+- `Woolworths is rate-limiting; retry in N min` means the site refused three requests within a minute. Wait the minutes it gives; reopening the browser does not shorten the wait, and a reopened browser serves no cached search, product or specials results until it ends
+- `Woolworths did not respond in time` means a request got no answer in 15 seconds, often the start of a block. Slow down, and reopen the browser if it keeps happening
 - Verify the API endpoints are still valid
 
 ### Connection issues

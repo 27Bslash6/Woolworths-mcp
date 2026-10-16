@@ -20,6 +20,7 @@
   "author": "",
   "license": "GPL-3.0-only",
   "dependencies": {
+    "@cachekit-io/cachekit": "0.1.5",
     "@modelcontextprotocol/sdk": "1.32.1",
     "puppeteer": "25.12.0",
     "zod": "4.6.5"

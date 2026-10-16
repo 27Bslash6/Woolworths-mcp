@@ -326,7 +326,7 @@ pnpm run build
 ### Test P.3: Concurrent Requests
 **Steps**: Make multiple API calls in quick succession
 
-**Expected**: All complete successfully (but respect rate limits)
+**Expected**: All complete successfully. They reach Woolworths one at a time, about a second apart, so a burst of N calls takes about N seconds
 
 ## Security Tests
 
@@ -377,7 +377,7 @@ After any code changes, run this minimal regression suite:
 | Session expires after ~1 hour | API calls fail with 401/403 | Close and re-open the browser, and log in again if needed |
 | API tools need the browser open | Closing it stops every API call | Keep the browser open while using API tools |
 | Account trolley needs login | Anonymous trolley otherwise | Log in in the browser window |
-| API rate limiting | May throttle requests | Add delays between bulk operations |
+| API rate limiting | Three refusals within a minute pause requests for 5 minutes | Wait the minutes the error gives; requests are already paced to about one a second |
 | Woolworths API changes | Server may break | Update endpoints as needed |
 
 ## Test Results Template

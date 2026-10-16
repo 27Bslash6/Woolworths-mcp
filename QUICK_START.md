@@ -86,7 +86,7 @@ Shopping commands stop working until you open the browser again.
 ## Tips
 
 - 💡 Keep the browser open while you shop: closing it stops every shopping command
-- 🔄 If you get a 403 error, your session expired - close and reopen the browser
+- 🔄 If you get a 403 error, your session expired or the site refused the request - close and reopen the browser. Three refusals within a minute pause all requests for 5 minutes (`Woolworths is rate-limiting; retry in N min`)
 - 🛍️ Log in if you want your account's trolley; otherwise the cart is an anonymous trolley kept by the browser
 - 📦 Note the stockcode from search results to add items to cart
 
@@ -103,7 +103,9 @@ Shopping commands stop working until you open the browser again.
 
 **"The browser tab is not on https://www.woolworths.com.au"** → Navigate back to a www.woolworths.com.au page with `woolworths_navigate`
 
-**"API request failed: 403"** → Session expired or refused: close and reopen the browser (headed), and log in again if needed
+**"API request failed: 403"** → Session expired or refused: close and reopen the browser (headed), and log in again if needed. After three refusals within a minute the server stops sending for 5 minutes
+
+**"Woolworths is rate-limiting; retry in N min"** → The site refused three requests within a minute, so nothing is sent until the minutes given have passed. Cached categories are still served; cached searches, products and specials are served only if this browser read its store before the pause began
 
 **Server won't start** → Check you've run `pnpm run build`
 
