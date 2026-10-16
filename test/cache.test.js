@@ -2,7 +2,7 @@
 // a fresh temporary cache directory.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, afterEach, beforeEach, mock, test } from "node:test";
@@ -14,6 +14,7 @@ const readJson = (name) => JSON.parse(readFileSync(new URL(name, import.meta.url
 const searchFixture = readJson("./fixtures/search-milk.json");
 const specialsFixture = readJson("./fixtures/specials-half-price-pantry.json");
 const detailFixture = readJson("./fixtures/product-detail-223104.json");
+const detailExpected = readJson("./fixtures/product-detail-223104.expected.json");
 const categoriesFixture = readJson("./fixtures/categories.json");
 const trolleyFixture = readJson("./fixtures/trolley.json");
 
@@ -190,6 +191,57 @@ test("product details keep only named fields inside every kept object, and only 
     assert.ok(!("sapcategoryno" in product.AdditionalAttributes));
   }
   assert.deepEqual(fromDisk.payload, fresh.payload);
+});
+
+test("product details return exactly the expected fields, fresh and from disk", async (t) => {
+  const api = stubApi(t.mock, fixtures);
+
+  const fresh = await call("woolworths_get_product_details", { stockcode: 223104 });
+  await closeBrowser();
+  await resetState();
+  await open();
+  const fromDisk = await call("woolworths_get_product_details", { stockcode: 223104 });
+
+  assert.equal(api.mock.callCount(), 1);
+  assert.deepEqual(fresh.payload.product, detailExpected);
+  assert.deepEqual(fromDisk.payload.product, detailExpected);
+});
+
+test("search pagination is built locally, so no key Woolworths puts in it reaches the result or the cache", async (t) => {
+  const search = structuredClone(searchFixture);
+  search.Pagination = { QuantityInTrolley: 7, HasBeenBoughtBefore: true };
+  const api = stubApi(t.mock, async (url) =>
+    Response.json(new URL(url).pathname.endsWith("/Search/products") ? search : fixtureFor(url))
+  );
+
+  const fresh = await call("woolworths_search_products", { searchTerm: "milk", pageNumber: 2, pageSize: 10 });
+  await closeBrowser();
+  await resetState();
+  const onDisk = readdirSync(process.env.WOOLWORTHS_MCP_CACHE_DIR, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => readFileSync(join(entry.parentPath, entry.name)));
+  await open();
+  const fromDisk = await call("woolworths_search_products", { searchTerm: "milk", pageNumber: 2, pageSize: 10 });
+
+  assert.equal(api.mock.callCount(), 1);
+  assert.ok(onDisk.length > 0);
+  for (const field of Object.keys(search.Pagination)) {
+    assert.ok(!onDisk.some((bytes) => bytes.includes(field)), field);
+    for (const { payload } of [fresh, fromDisk]) {
+      assert.ok(!JSON.stringify(payload).includes(field), field);
+    }
+  }
+  for (const { payload } of [fresh, fromDisk]) {
+    assert.deepEqual(payload.pagination, { TotalRecords: searchFixture.SearchResultsCount, PageNumber: 2, PageSize: 10 });
+  }
+});
+
+test("the recorded search's pagination is unchanged", async (t) => {
+  stubApi(t.mock, fixtures);
+
+  const { payload } = await call("woolworths_search_products", { searchTerm: "milk" });
+
+  assert.deepEqual(payload.pagination, { TotalRecords: searchFixture.SearchResultsCount, PageNumber: 1, PageSize: 36 });
 });
 
 // Store id
