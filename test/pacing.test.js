@@ -231,7 +231,7 @@ test("after 5 minutes one successful probe closes the breaker, and later calls a
   const next = [await call("woolworths_get_cart"), await call("woolworths_get_cart")];
 
   assert.equal(probe.isError, false);
-  // The half-open lock: with successThreshold above halfOpenMaxCalls these two would be refused.
+  // The one successful probe closed the breaker, so these two go straight through.
   assert.deepEqual(next.map((r) => r.isError), [false, false]);
   assert.equal(upstream.mock.callCount(), 6);
 });
