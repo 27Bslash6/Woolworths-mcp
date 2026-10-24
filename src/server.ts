@@ -169,8 +169,7 @@ function errorMessage(error: unknown): string {
 
 // Stops calls while Woolworths is refusing them. Counted failures are the ones that say the site is
 // blocking or down: 403, 429, 5xx, no answer, and a 200 that is not the expected JSON. One probe is let
-// through after the timeout, and one success closes it (successThreshold must not exceed
-// halfOpenMaxCalls, or the probe's slot is never freed and the breaker stays half-open).
+// through after the timeout, and one success closes it.
 const BREAKER_TIMEOUT_MS = 300_000;
 const breaker = new CircuitBreaker({
   failureThreshold: 3,
