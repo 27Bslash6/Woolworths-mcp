@@ -17,6 +17,9 @@ const detailFixture = readJson("./fixtures/product-detail-223104.json");
 const categoriesFixture = readJson("./fixtures/categories.json");
 // One recorded anonymous trolley holding stockcode 50923 at quantity 1; it carries no session identifiers.
 const trolleyFixture = readJson("./fixtures/trolley.json");
+// The trolley/update answer to adding stockcode 547124 while it was out of stock at the store
+// (recorded 2026-11-20): the line is written with IsAvailable false and a price of 0.
+const unavailableUpdateFixture = readJson("./fixtures/trolley-update-unavailable.json");
 const BASE = "https://www.woolworths.com.au";
 
 // Every test starts with a fake browser open on the Woolworths homepage.
@@ -298,15 +301,45 @@ test("closing a browser that is not open is an isError result", async () => {
   assert.deepEqual(payload, { success: false, error: "Browser is not open." });
 });
 
-// Stubs the trolley read with `trolley` and the update with a 200; returns every request made.
-function stubTrolley(t, trolley) {
+// Stubs the trolley read with `trolley` and the update with a 200 of `update`; returns every request made.
+function stubTrolley(t, trolley, update = { UpdatedItems: [] }) {
   const requests = [];
   stubApi(t.mock, async (url, init) => {
     requests.push({ url, method: init.method, body: init.body && JSON.parse(init.body) });
-    return Response.json(url.endsWith("/apis/ui/Trolley") ? trolley : { UpdatedItems: [] });
+    return Response.json(url.endsWith("/apis/ui/Trolley") ? trolley : update);
   });
   return requests;
 }
+
+for (const [tool, args] of [
+  ["woolworths_add_to_cart", { stockcode: 547124, quantity: 1 }],
+  ["woolworths_update_cart_quantity", { stockcode: 547124, quantity: 1 }],
+]) {
+  test(`${tool} is an isError result when the written line is unavailable`, async (t) => {
+    const requests = stubTrolley(t, trolleyFixture, unavailableUpdateFixture);
+
+    const { isError, payload } = await call(tool, args);
+
+    assert.equal(isError, true);
+    assert.equal(payload.success, false);
+    assert.equal(
+      payload.error,
+      "Woolworths wrote these trolley lines but marks them unavailable at this store, so they will not be supplied: " +
+        "Ashgrove Pure Natural Cream 500mL (547124). " +
+        "Remove each with woolworths_remove_from_cart and choose a substitute."
+    );
+    assert.equal(requests.at(-1).method, "POST");
+  });
+}
+
+test("woolworths_update_cart_quantity is an isError result when the update has no UpdatedItems array", async (t) => {
+  stubTrolley(t, trolleyFixture, { Message: null });
+
+  const { isError, payload } = await call("woolworths_update_cart_quantity", { stockcode: 50923, quantity: 2 });
+
+  assert.equal(isError, true);
+  assert.match(payload.error, /may have been applied.*UpdatedItems.*woolworths_get_cart/);
+});
 
 const withQuantity = (stockcode, quantity) => ({
   ...trolleyFixture,

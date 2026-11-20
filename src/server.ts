@@ -660,11 +660,12 @@ const productDetail = pick(
 );
 
 // The product attributes a shopper asks about. Every attribute not listed is dropped, including the
-// retailer's internal codes and costs and the non-food attributes.
+// retailer's internal codes and costs and the non-food attributes, and two duplicates: "description" is
+// Product.RichDescription again, and "nutritionalinformation" is NutritionalInformation as a JSON string.
 const PRODUCT_ATTRIBUTES = [
-  "description", "brand", "manufacturer", "ingredients", "allergencontains", "allergenmaybepresent",
+  "brand", "manufacturer", "ingredients", "allergencontains", "allergenmaybepresent",
   "allergystatement", "containsgluten", "containsnuts", "contains", "lifestyleanddietarystatement",
-  "lifestyleclaim", "wool_dietaryclaim", "vegetarian", "claims", "healthstarrating", "nutritionalinformation",
+  "lifestyleclaim", "wool_dietaryclaim", "vegetarian", "claims", "healthstarrating",
   "servingsize-total-nip", "servingsperpack-total-nip", "storageinstructions", "usageinstructions",
   "importantinformation", "suitablefor", "countryoforigin", "freezable", "microwaveable", "ovencook",
   "recyclableinformation", "wool_productpackaging",
@@ -703,7 +704,7 @@ async function productUpstream(started: Session, { stockcode }: ProductKey) {
 async function handleGetProductDetails({ stockcode }: { stockcode: number }) {
   const started = apiSession();
   const key: ProductKey = { storeId: await storeIdFor(started), catalogueWeek: catalogueWeek(), stockcode };
-  return getCache().wrap((k: ProductKey) => productUpstream(started, k), { namespace: "ww:product:v1", ttl: 21600 })(key);
+  return getCache().wrap((k: ProductKey) => productUpstream(started, k), { namespace: "ww:product:v2", ttl: 21600 })(key);
 }
 
 // Specials listings are category ids from the category tree: `<NodeId>_SPECIALS` is a top-level
@@ -835,6 +836,31 @@ async function handleGetCategories() {
 // The trolley is never cached: it changes with every write, and it is this session's own state.
 const TROLLEY_URL = `${WOOLWORTHS_ORIGIN}/apis/ui/Trolley`;
 
+// The lines an update wrote. A product out of stock at the store is still written, with IsAvailable
+// false and a price of 0 (test/fixtures/trolley-update-unavailable.json); a removal writes none.
+const updatedItems = z.object({
+  UpdatedItems: z.array(z.object({ Stockcode: z.unknown(), DisplayName: z.unknown(), IsAvailable: z.unknown() })),
+});
+
+// Runs after the request, not as its parse: an unavailable product is an answer from Woolworths, not
+// a fault, so it must not count against the breaker.
+function refuseUnavailableLines(data: unknown): void {
+  const parsed = updatedItems.safeParse(data);
+  if (!parsed.success) {
+    throw new Error(
+      "The update may have been applied, but its response has no UpdatedItems array; check woolworths_get_cart."
+    );
+  }
+  const unavailable = parsed.data.UpdatedItems.filter((item) => item.IsAvailable === false);
+  if (unavailable.length) {
+    const lines = unavailable.map((item) => `${String(item.DisplayName)} (${String(item.Stockcode)})`).join(", ");
+    throw new Error(
+      `Woolworths wrote these trolley lines but marks them unavailable at this store, so they will not be supplied: ${lines}. ` +
+        "Remove each with woolworths_remove_from_cart and choose a substitute."
+    );
+  }
+}
+
 // Sets the trolley quantity of one product; quantity 0 removes it.
 async function handleUpdateTrolley(
   { stockcode, quantity }: { stockcode: number; quantity: number },
@@ -860,6 +886,7 @@ async function handleUpdateTrolley(
     },
     isUpdate: true,
   });
+  refuseUnavailableLines(data);
   return {
     success: true,
     cart: data,

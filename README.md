@@ -159,6 +159,8 @@ Get the product categories: each top-level category with its subcategories, as `
 
 Add a product to the shopping cart/trolley. The quantity is added to any quantity already in the trolley: the tool reads the trolley, then sets the current quantity plus the requested one. If the trolley read fails, nothing is written. To set an exact quantity, use `woolworths_update_cart_quantity`.
 
+A product that is out of stock at the store is still written to the trolley, with a price of 0, and will not be supplied. When Woolworths marks a written line unavailable, this tool and `woolworths_update_cart_quantity` return `isError: true` naming the line: remove it with `woolworths_remove_from_cart` and choose a substitute.
+
 **Parameters:**
 - `stockcode` (positive integer, required): The product stockcode/ID
 - `quantity` (integer, optional, 1 or more): Quantity to add (default: 1)
