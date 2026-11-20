@@ -836,6 +836,31 @@ async function handleGetCategories() {
 // The trolley is never cached: it changes with every write, and it is this session's own state.
 const TROLLEY_URL = `${WOOLWORTHS_ORIGIN}/apis/ui/Trolley`;
 
+// The lines an update wrote. A product out of stock at the store is still written, with IsAvailable
+// false and a price of 0 (test/fixtures/trolley-update-unavailable.json); a removal writes none.
+const updatedItems = z.object({
+  UpdatedItems: z.array(z.object({ Stockcode: z.unknown(), DisplayName: z.unknown(), IsAvailable: z.unknown() })),
+});
+
+// Runs after the request, not as its parse: an unavailable product is an answer from Woolworths, not
+// a fault, so it must not count against the breaker.
+function refuseUnavailableLines(data: unknown): void {
+  const parsed = updatedItems.safeParse(data);
+  if (!parsed.success) {
+    throw new Error(
+      "The update may have been applied, but its response has no UpdatedItems array; check woolworths_get_cart."
+    );
+  }
+  const unavailable = parsed.data.UpdatedItems.filter((item) => item.IsAvailable === false);
+  if (unavailable.length) {
+    const lines = unavailable.map((item) => `${String(item.DisplayName)} (${String(item.Stockcode)})`).join(", ");
+    throw new Error(
+      `Woolworths wrote these trolley lines but marks them unavailable at this store, so they will not be supplied: ${lines}. ` +
+        "Remove each with woolworths_remove_from_cart and choose a substitute."
+    );
+  }
+}
+
 // Sets the trolley quantity of one product; quantity 0 removes it.
 async function handleUpdateTrolley(
   { stockcode, quantity }: { stockcode: number; quantity: number },
@@ -861,6 +886,7 @@ async function handleUpdateTrolley(
     },
     isUpdate: true,
   });
+  refuseUnavailableLines(data);
   return {
     success: true,
     cart: data,
