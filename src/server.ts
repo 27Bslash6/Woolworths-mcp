@@ -661,11 +661,12 @@ const productDetail = pick(
 );
 
 // The product attributes a shopper asks about. Every attribute not listed is dropped, including the
-// retailer's internal codes and costs and the non-food attributes.
+// retailer's internal codes and costs and the non-food attributes, and two duplicates: "description" is
+// Product.RichDescription again, and "nutritionalinformation" is NutritionalInformation as a JSON string.
 const PRODUCT_ATTRIBUTES = [
-  "description", "brand", "manufacturer", "ingredients", "allergencontains", "allergenmaybepresent",
+  "brand", "manufacturer", "ingredients", "allergencontains", "allergenmaybepresent",
   "allergystatement", "containsgluten", "containsnuts", "contains", "lifestyleanddietarystatement",
-  "lifestyleclaim", "wool_dietaryclaim", "vegetarian", "claims", "healthstarrating", "nutritionalinformation",
+  "lifestyleclaim", "wool_dietaryclaim", "vegetarian", "claims", "healthstarrating",
   "servingsize-total-nip", "servingsperpack-total-nip", "storageinstructions", "usageinstructions",
   "importantinformation", "suitablefor", "countryoforigin", "freezable", "microwaveable", "ovencook",
   "recyclableinformation", "wool_productpackaging",
@@ -704,7 +705,7 @@ async function productUpstream(started: Session, { stockcode }: ProductKey) {
 async function handleGetProductDetails({ stockcode }: { stockcode: number }) {
   const started = apiSession();
   const key: ProductKey = { storeId: await storeIdFor(started), catalogueWeek: catalogueWeek(), stockcode };
-  return getCache().wrap((k: ProductKey) => productUpstream(started, k), { namespace: "ww:product:v1", ttl: 21600 })(key);
+  return getCache().wrap((k: ProductKey) => productUpstream(started, k), { namespace: "ww:product:v2", ttl: 21600 })(key);
 }
 
 // Specials listings are category ids from the category tree: `<NodeId>_SPECIALS` is a top-level
